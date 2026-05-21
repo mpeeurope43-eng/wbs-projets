@@ -1754,6 +1754,17 @@ function calcFacRealise(pid) { return getFacProjet(pid).filter(f=>f.type==='real
 function calcFacPrevu(pid) { return getFacProjet(pid).filter(f=>f.type==='previsionnel').reduce((s,f)=>s+(f.montant||0),0); }
 function calcDepPaye(pid) { return getDepProjet(pid).filter(d=>d.statut==='paye').reduce((s,d)=>s+(d.montant||0),0); }
 function calcDepEngage(pid) { return getDepProjet(pid).filter(d=>d.statut==='engage').reduce((s,d)=>s+(d.montant||0),0); }
+function calcCoutHeures(pid) {
+  // Coût interne des heures pointées sur ce projet (depuis Firebase pointage)
+  if (!DB.heuresEntries || !DB.heuresUsers) return 0;
+  const entries = getHeuresForProjet(pid);
+  return Math.round(entries.reduce((s,e) => {
+    const h = (e.ms||0) / 3600000;
+    const u = DB.heuresUsers.find(u => u.id===e.userId || u.name===e.user);
+    const rate = u ? (u.rate||100) : 100;
+    return s + h * rate;
+  }, 0));
+}
 function calcDepPrevu(pid) { return getDepProjet(pid).reduce((s,d)=>s+(d.montant||0),0); }
 
 const N1_LABELS = {
@@ -2858,8 +2869,9 @@ function renderDepenses() {
   const budget  = calcBudgetTotal(pid);
   const paye    = calcDepPaye(pid);
   const engage    = calcDepEngage(pid);
+  const coutHeures = calcCoutHeures(pid); // heures internes pointées
   const planTotal = getDepPlanProjet(pid).reduce((s,d)=>s+(d.montant||0),0);
-  const totalReel = paye + engage; // engagé + payé = coût réel engagé
+  const totalReel = paye + engage + coutHeures; // engagé + payé + heures internes
   const rar       = budget - totalReel;
   const ecart     = totalReel - planTotal;
   const marche    = calcMarcheTotal(activeProjetId);
