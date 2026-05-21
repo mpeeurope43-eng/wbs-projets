@@ -5800,9 +5800,9 @@ function setHeureView(v) {
   renderHeures();
 }
 
-async function syncHeuresFirebase() {
+async function syncHeuresFirebase(silent) {
   const btn = document.getElementById('btn-sync-heures');
-  if (btn) btn.textContent = '⏳ Sync...';
+  if (btn && !silent) btn.textContent = '⏳ Sync...';
   try {
     // Charger depuis Firebase pointage (projet mpe-pointages)
     const POINTAGE_CONFIG = {
@@ -5827,8 +5827,11 @@ async function syncHeuresFirebase() {
       const data = doc.data();
       DB.heuresEntries = data.entries  || [];
       DB.heuresUsers   = data.users    || [];
-      notif(`✓ ${DB.heuresEntries.length} pointages chargés`);
-      renderHeures();
+      if (!silent) notif(`✓ ${DB.heuresEntries.length} pointages chargés`);
+      // Rafraîchir les pages qui utilisent les heures
+      if (document.getElementById('page-heures').classList.contains('active')) renderHeures();
+      if (document.getElementById('page-graphiques').classList.contains('active')) renderGraphiques();
+      renderDashboard(); // toujours rafraîchir le dashboard
     } else {
       notif('Document Firebase introuvable','var(--amber)');
     }
@@ -6096,7 +6099,12 @@ function renderAll() {
 async function init() {
   if(useFirebase){
     const loaded=await loadFromFirebase();
-    if(loaded&&DB.projets.length>0){renderAll();return;}
+    if(loaded&&DB.projets.length>0){
+      renderAll();
+      // Sync heures en arrière-plan sans bloquer
+      syncHeuresFirebase(true);
+      return;
+    }
   }
   loadDemoData();
 }
