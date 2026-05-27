@@ -550,36 +550,18 @@ tr:hover td{background:var(--bg3)}
 <!-- Modal Import Chiffrage Excel -->
 <div class="modal-overlay" id="modal-import-chiffrage">
   <div class="modal" style="max-width:600px">
-    <div class="modal-title">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <div class="modal-title" style="display:flex;align-items:center;gap:10px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="16 17 12 21 8 17"/><line x1="12" y1="12" x2="12" y2="21"/></svg>
       Import chiffrage Excel
     </div>
 
-    <!-- Zone de dépôt / sélection fichier -->
-    <div style="border:2px dashed var(--border2);border-radius:10px;padding:28px;text-align:center;background:var(--bg3);margin-bottom:16px;cursor:pointer"
-         onclick="document.getElementById('chiffrage-file').click()">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--txt3)" stroke-width="1.5" style="margin:0 auto 10px;display:block"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-      <div style="font-size:13px;color:var(--txt2);margin-bottom:4px">Cliquez pour sélectionner votre fichier chiffrage</div>
-      <div style="font-size:11px;color:var(--txt3)">Format accepté : .xlsx / .xlsm — Onglet requis : <strong style="color:var(--accent)">Suivi de projet</strong></div>
-      <input type="file" id="chiffrage-file" accept=".xlsx,.xlsm" style="display:none" onchange="previewChiffrage(this)">
+    <!-- Nom du fichier chargé -->
+    <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--txt2);display:flex;align-items:center;gap:8px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <span id="chiffrage-filename" style="color:var(--accent);font-weight:500">—</span>
     </div>
 
-    <!-- Aide colonnes attendues -->
-    <div style="background:var(--accent-dim);border:1px solid rgba(79,142,247,.2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:11px;color:var(--txt2)">
-      <strong style="color:var(--accent);display:block;margin-bottom:6px">📋 Structure attendue (onglet "Suivi de projet")</strong>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-        <div>· <strong>R4 col D</strong> — Code projet</div>
-        <div>· <strong>R4 col E</strong> — Nom projet</div>
-        <div>· <strong>R4 col F</strong> — Client</div>
-        <div>· <strong>R4 col G</strong> — BU</div>
-        <div>· <strong>Col A/B</strong> — N1 / N2</div>
-        <div>· <strong>Col C</strong> — Libellé WBS</div>
-        <div>· <strong>Col E</strong> — Heures prévues</div>
-        <div>· <strong>Col N/O</strong> — Budget achat / Coût total</div>
-      </div>
-    </div>
-
-    <!-- Preview après lecture -->
+    <!-- Info parsing -->
     <div id="chiffrage-preview" style="display:none;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-bottom:16px">
       <div style="font-size:11px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Aperçu du fichier</div>
       <div id="chiffrage-preview-content"></div>
@@ -713,10 +695,11 @@ tr:hover td{background:var(--bg3)}
             Charger Excel
           </button>
           <input type="file" id="file-input-projet" accept=".xlsx,.xlsm" style="display:none" onchange="handleProjetFileSelect(this)">
-          <button class="btn btn-ghost btn-sm" onclick="openModalImportChiffrage()" style="display:flex;align-items:center;gap:5px">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Import chiffrage Excel
-        </button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('file-chiffrage-direct').click()" style="display:flex;align-items:center;gap:5px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import chiffrage Excel
+          </button>
+          <input type="file" id="file-chiffrage-direct" accept=".xlsx,.xlsm" style="display:none" onchange="handleChiffrageFileSelect(this)">
         <button class="btn btn-primary btn-sm" onclick="openModalProjet()">+ Nouveau projet</button>
         </div>
       </div>
@@ -6191,12 +6174,34 @@ function showHeuresDetail(type, key, entriesJson) {
 // ════════════════════════════════════════════════════════════════
 let _chiffrageData = null; // données parsées en attente d'import
 
-function openModalImportChiffrage() {
-  document.getElementById('chiffrage-file').value = '';
+function handleChiffrageFileSelect(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
   document.getElementById('chiffrage-preview').style.display = 'none';
+  document.getElementById('chiffrage-warning').style.display = 'none';
   document.getElementById('btn-import-chiffrage').style.display = 'none';
+  document.getElementById('chiffrage-preview-content').innerHTML = '';
+  document.getElementById('chiffrage-filename').textContent = file.name;
   _chiffrageData = null;
   openModal('modal-import-chiffrage');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      _chiffrageData = parseChiffrageXLSX(wb);
+      renderChiffragePreview(_chiffrageData);
+    } catch(err) {
+      document.getElementById('chiffrage-warning').style.display = '';
+      document.getElementById('chiffrage-warning').innerHTML = '⚠ Erreur lecture Excel : ' + err.message;
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function openModalImportChiffrage() {
+  document.getElementById('file-chiffrage-direct').click();
 }
 
 function previewChiffrage(input) {
