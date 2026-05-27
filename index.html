@@ -219,9 +219,12 @@ tr:hover td{background:var(--bg3)}
         <input class="form-input" id="p-fin" type="date">
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-projet')">Annuler</button>
-      <button class="btn btn-primary" onclick="saveProjet()">Enregistrer</button>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger btn-sm" id="btn-delete-projet" style="display:none" onclick="deleteProjet()">Supprimer le projet</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeModal('modal-projet')">Annuler</button>
+        <button class="btn btn-primary" onclick="saveProjet()">Enregistrer</button>
+      </div>
     </div>
   </div>
 </div>
@@ -4544,6 +4547,7 @@ function openModalProjet(id) {
   editProjetId = id || null;
   const p = id ? getProjet(id) : null;
   document.getElementById('modal-projet-title').textContent = p ? 'Modifier le projet' : 'Nouveau projet';
+  document.getElementById('btn-delete-projet').style.display = p ? 'inline-flex' : 'none';
   document.getElementById('p-code').value = p ? p.code : '';
   document.getElementById('p-nom').value = p ? p.nom : '';
   document.getElementById('p-client').value = p ? p.client : '';
@@ -4582,9 +4586,37 @@ function saveProjet() {
   if (useFirebase) syncToFirebase('projets');
 }
 
-// ════════════════════════════════════════════════════════════════
-// AVENANTS
-// ════════════════════════════════════════════════════════════════
+function deleteProjet() {
+  if (!editProjetId) return;
+  const p = getProjet(editProjetId);
+  if (!p) return;
+  if (!confirm(`Supprimer le projet "${p.code} — ${p.nom}" ?\n\nToutes les données liées seront supprimées (WBS, dépenses, facturation, avenants, heures, actions, tâches Gantt).`)) return;
+
+  const pid = editProjetId;
+  DB.projets      = DB.projets.filter(x => x.id !== pid);
+  DB.wbs          = (DB.wbs          || []).filter(x => x.projetId !== pid);
+  DB.depenses     = (DB.depenses     || []).filter(x => x.projetId !== pid);
+  DB.facturations = (DB.facturations || []).filter(x => x.projetId !== pid);
+  DB.avenants     = (DB.avenants     || []).filter(x => x.projetId !== pid);
+  DB.heures       = (DB.heures       || []).filter(x => x.projetId !== pid);
+  DB.actions      = (DB.actions      || []).filter(x => x.projetId !== pid);
+  DB.gantt        = (DB.gantt        || []).filter(x => x.projetId !== pid);
+  DB.jalons       = (DB.jalons       || []).filter(x => x.projetId !== pid);
+
+  if (activeProjetId === pid) activeProjetId = null;
+
+  closeModal('modal-projet');
+  renderProjetSelect();
+  renderProjets();
+  renderDashboard();
+  notif(`Projet ${p.code} supprimé`);
+
+  if (useFirebase) {
+    ['projets','wbs','depenses','facturations','avenants','heures','actions','gantt','jalons'].forEach(k => syncToFirebase(k));
+  }
+}
+
+
 let editAvenantId = null;
 
 function openModalAvenant(id) {
@@ -6272,9 +6304,12 @@ function parseChiffrageXLSX(wb) {
         isN1: true
       });
     }
-    // N2 : col A vide et col B non vide
+    // N2 : col A vide, col B non vide, col D (WBS libellé) non vide
     else if (!colA && colB && currentN1 !== null) {
+      const colD = row[3] !== null && row[3] !== undefined ? String(row[3]).trim() : '';
+      if (!colD) continue; // ignorer les lignes sans libellé WBS en col D
       const n2 = parseInt(colB);
+      if (!n2) continue;
       // Convertir heures Excel (peut être timedelta ou nombre)
       let heuresPrevu = 0;
       if (colE) {
@@ -6289,7 +6324,7 @@ function parseChiffrageXLSX(wb) {
       const coutTotal   = parseFloat(colO) || 0;
       data.wbs.push({
         n1: currentN1, n2,
-        libelle: colC || `${currentN1}-${n2}`,
+        libelle: colD || colC || `${currentN1}-${n2}`,
         heuresPrevu,
         budgetAchat,
         prevu: Math.round(coutTotal || budgetAchat),
