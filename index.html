@@ -662,7 +662,11 @@ tr:hover td{background:var(--bg3)}
             Charger Excel
           </button>
           <input type="file" id="file-input-projet" accept=".xlsx,.xlsm" style="display:none" onchange="handleProjetFileSelect(this)">
-          <button class="btn btn-primary btn-sm" onclick="openModalProjet()">+ Nouveau projet</button>
+          <button class="btn btn-ghost btn-sm" onclick="openModalImportChiffrage()" style="display:flex;align-items:center;gap:5px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Import chiffrage Excel
+        </button>
+        <button class="btn btn-primary btn-sm" onclick="openModalProjet()">+ Nouveau projet</button>
         </div>
       </div>
       <div style="padding:20px 28px">
@@ -2919,6 +2923,7 @@ function renderDepenses() {
     <div class="kpi"><div class="kpi-label">Prévisionnel planifié</div><div class="kpi-value" style="color:${planColor}">${fmtK(planTotal)}</div><div class="kpi-sub">${budget?Math.round(planTotal/budget*100):0}% du budget${alerteJaunePrevi?' ⚠':alerteBleuPrevi?' ℹ':''}</div></div>
     <div class="kpi amber"><div class="kpi-label">Engagé</div><div class="kpi-value">${fmtK(engage)}</div><div class="kpi-sub">commandes passées</div></div>
     <div class="kpi green"><div class="kpi-label">Payé</div><div class="kpi-value">${fmtK(paye)}</div><div class="kpi-sub">${budget?Math.round(paye/budget*100):0}% du budget</div></div>
+    ${coutHeures>0?`<div class="kpi" style="border-color:var(--accent)"><div class="kpi-label">⏱ Heures internes</div><div class="kpi-value" style="color:var(--accent)">${fmtK(coutHeures)}</div><div class="kpi-sub">${hToStr(getHeuresForProjet(pid).reduce((s,e)=>s+(e.ms||0),0)/3600000)} pointées</div></div>`:''}
     <div class="kpi" style="${alerteRouge?'border-color:var(--red)':''}">
       <div class="kpi-label">Total réel engagé</div>
       <div class="kpi-value" style="color:${totalReelColor}">${fmtK(totalReel)}</div>
@@ -3074,7 +3079,43 @@ function renderDepPlanning(p) {
         return match;
       });
     };
-    const getWReal = (key) => getWRealDeps(key).reduce((s,d)=>s+(d.montant||0),0);
+    // Calcul heures internes par semaine pour ce WBS
+    const getWHeures = (key) => {
+      if (!DB.heuresEntries || !DB.heuresUsers) return 0;
+      const p2 = getProjet(pid);
+      if (!p2) return 0;
+      const code = p2.code.toUpperCase();
+      // WBS code attendu : "N1-N2" ex: "0-1"
+      const wbsN1N2 = w.id ? `${w.n1}-${w.n2}` : null;
+      return (DB.heuresEntries || []).filter(e => {
+        // Filtrer par projet
+        if ((e.project||'').toUpperCase().trim() !== code) return false;
+        // Filtrer par WBS si disponible
+        if (wbsN1N2 && e.wbs) {
+          const eWbs = String(e.wbs).replace(/^-/,'');
+          if (eWbs !== wbsN1N2 && eWbs.split('-')[0] !== String(w.n1)) return false;
+        }
+        // Filtrer par semaine depuis e.date
+        if (!e.date) return false;
+        if (key.includes('-W')) {
+          const [yr,wk2] = key.split('-W').map(Number);
+          const j4 = new Date(yr,0,4);
+          const start = new Date(j4.getTime()-((j4.getDay()||7)-1)*86400000+(wk2-1)*7*86400000);
+          const end2  = new Date(start.getTime()+6*86400000);
+          const dp = e.date.split('-').map(Number);
+          const dd = new Date(dp[0], dp[1]-1, dp[2]);
+          if (dd < start || dd > end2) return false;
+        } else {
+          if (e.date.slice(0,7) !== key) return false;
+        }
+        return true;
+      }).reduce((s,e) => {
+        const h = (e.ms||0)/3600000;
+        const u = (DB.heuresUsers||[]).find(u=>u.id===e.userId||u.name===e.user);
+        return s + h * (u?u.rate||100:100);
+      }, 0);
+    };
+    const getWReal = (key) => getWRealDeps(key).reduce((s,d)=>s+(d.montant||0),0) + getWHeures(key);
 
     const wTotPrev = periodes.reduce((s,per)=>s+getWPrev(per.key),0);
     const wTotReal = periodes.reduce((s,per)=>s+getWReal(per.key),0);
@@ -3972,15 +4013,16 @@ function renderGraphiques() {
   const facRealTotal = facs.filter(f=>f.type==='realise').reduce((s,f)=>s+f.montant,0);
   const depPayeTotal = deps.filter(d=>d.statut==='paye').reduce((s,d)=>s+d.montant,0);
   const depEngTotal  = deps.filter(d=>d.statut==='engage').reduce((s,d)=>s+d.montant,0);
+  const coutHeuresGraph = calcCoutHeures(pid); // heures internes pointées
   const margeVendue  = marche - budget;
-  const margeReelle  = facRealTotal - depPayeTotal;
+  const margeReelle  = facRealTotal - depPayeTotal - coutHeuresGraph;
   const mrgCol = margeReelle >= margeVendue*0.7 ? '#34d399' : margeReelle >= 0 ? '#fbbf24' : '#f87171';
   document.getElementById('pilotage-kpis').innerHTML = `
     <div class="kpi blue"><div class="kpi-label">Marché</div><div class="kpi-value">${fmtK(marche)||'—'}</div><div class="kpi-sub">ligne fixe</div></div>
     <div class="kpi green"><div class="kpi-label">Coût prévisionnel</div><div class="kpi-value">${fmtK(budget)||'—'}</div><div class="kpi-sub">ligne fixe</div></div>
     <div class="kpi"><div class="kpi-label">Marge vendue</div><div class="kpi-value" style="color:#34d399">${marche&&budget ? fmtK(margeVendue)+' — '+Math.round(margeVendue/marche*100)+'%' : '—'}</div><div class="kpi-sub">marché − coût prévi.</div></div>
     <div class="kpi blue"><div class="kpi-label">Facturé client</div><div class="kpi-value">${fmtK(facRealTotal)||'0 €'}</div><div class="kpi-sub">${marche?Math.round(facRealTotal/marche*100):0}% du marché</div></div>
-    <div class="kpi amber"><div class="kpi-label">Dép. engagées</div><div class="kpi-value">${fmtK(depEngTotal+depPayeTotal)||'0 €'}</div><div class="kpi-sub">dont payé : ${fmtK(depPayeTotal)}</div></div>
+    <div class="kpi amber"><div class="kpi-label">Dép. engagées</div><div class="kpi-value">${fmtK(depEngTotal+depPayeTotal+coutHeuresGraph)||'0 €'}</div><div class="kpi-sub">dont heures : ${fmtK(coutHeuresGraph)}</div></div>
     <div class="kpi"><div class="kpi-label">Marge réelle à date</div><div class="kpi-value" style="color:${mrgCol}">${facRealTotal||depPayeTotal ? (margeReelle>=0?'+':'')+fmtK(margeReelle) : '—'}</div><div class="kpi-sub">facturé − dép. payées</div></div>
   `;
 
@@ -5829,9 +5871,13 @@ async function syncHeuresFirebase(silent) {
       DB.heuresUsers   = data.users    || [];
       if (!silent) notif(`✓ ${DB.heuresEntries.length} pointages chargés`);
       // Rafraîchir les pages qui utilisent les heures
-      if (document.getElementById('page-heures').classList.contains('active')) renderHeures();
-      if (document.getElementById('page-graphiques').classList.contains('active')) renderGraphiques();
-      renderDashboard(); // toujours rafraîchir le dashboard
+      // Rafraîchir les pages selon celle qui est active
+      const activePage = document.querySelector('.page.active');
+      const activeId = activePage ? activePage.id : '';
+      if (activeId === 'page-heures')      renderHeures();
+      if (activeId === 'page-graphiques')  renderGraphiques();
+      if (activeId === 'page-depenses')    renderDepenses();
+      renderDashboard(); // toujours rafraîchir le dashboard global
     } else {
       notif('Document Firebase introuvable','var(--amber)');
     }
@@ -6088,6 +6134,228 @@ function showHeuresDetail(type, key, entriesJson) {
   document.getElementById('heures-detail').innerHTML = html;
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// IMPORT CHIFFRAGE EXCEL
+// ════════════════════════════════════════════════════════════════
+let _chiffrageData = null; // données parsées en attente d'import
+
+function openModalImportChiffrage() {
+  document.getElementById('chiffrage-file').value = '';
+  document.getElementById('chiffrage-preview').style.display = 'none';
+  document.getElementById('btn-import-chiffrage').style.display = 'none';
+  _chiffrageData = null;
+  openModal('modal-import-chiffrage');
+}
+
+function previewChiffrage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      _chiffrageData = parseChiffrageXLSX(wb);
+      renderChiffragePreview(_chiffrageData);
+    } catch(err) {
+      notif('Erreur lecture Excel : ' + err.message, 'var(--red)');
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseChiffrageXLSX(wb) {
+  const data = {};
+
+  // ── Onglet "Suivi de projet"
+  const ws = wb.Sheets['Suivi de projet'];
+  if (!ws) throw new Error('Onglet "Suivi de projet" introuvable');
+
+  const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
+
+  // Infos projet (lignes 4-10, col D = index 3)
+  const getCell = (r, c) => { const v = rows[r] && rows[r][c]; return v !== null && v !== undefined ? String(v).trim() : ''; };
+
+  data.code    = getCell(3, 3);  // R4 col D
+  data.nom     = getCell(4, 3);  // R5 col D
+  data.client  = getCell(5, 3);  // R6 col D
+  data.resp    = getCell(6, 3);  // R7 col D
+  data.bu      = getCell(7, 3);  // R8 col D
+
+  // Budget et prix de vente (col M = index 12)
+  data.budget  = parseFloat(getCell(3, 12)) || 0;   // R4 col M
+  data.marche  = parseFloat(getCell(4, 12)) || 0;   // R5 col M
+
+  // ── Parser les WBS (à partir de R15, index 14)
+  data.wbs = [];
+  let currentN1 = null;
+  const N1_LABELS = {
+    '0':'Chiffrage','1':'Pilotage','2':'Études mécaniques','3':'Équipements process',
+    '4':'Contrôle/ELEC','5':'Montage/MES','6':'Logistique','7':'Divers & Services','8':'Avenants'
+  };
+
+  for (let i = 14; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const colA = row[0] !== null && row[0] !== undefined ? String(row[0]).trim() : '';
+    const colB = row[1] !== null && row[1] !== undefined ? String(row[1]).trim() : '';
+    const colC = row[2] !== null && row[2] !== undefined ? String(row[2]).trim() : '';
+    const colE = row[4]; // Heures prévues
+    const colN = row[13]; // Budget achat prévu €
+    const colO = row[14]; // Coût prévu total
+
+    // N1 : col A non vide et col B vide
+    if (colA && !colB && colA !== '0') {
+      currentN1 = parseInt(colA);
+      const libN1 = colC || N1_LABELS[colA] || 'N1-'+colA;
+      data.wbs.push({
+        n1: currentN1, n2: null,
+        libelle: libN1,
+        prevu: 0, // calculé depuis enfants
+        isN1: true
+      });
+    }
+    // N2 : col A vide et col B non vide
+    else if (!colA && colB && currentN1 !== null) {
+      const n2 = parseInt(colB);
+      // Convertir heures Excel (peut être timedelta ou nombre)
+      let heuresPrevu = 0;
+      if (colE) {
+        if (typeof colE === 'number') {
+          heuresPrevu = Math.round(colE * 24 * 100) / 100; // fraction de jour → heures
+        } else if (typeof colE === 'string' && colE.includes(':')) {
+          const parts = colE.split(':');
+          heuresPrevu = parseInt(parts[0]||0) + parseInt(parts[1]||0)/60;
+        }
+      }
+      const budgetAchat = parseFloat(colN) || 0;
+      const coutTotal   = parseFloat(colO) || 0;
+      data.wbs.push({
+        n1: currentN1, n2,
+        libelle: colC || `${currentN1}-${n2}`,
+        heuresPrevu,
+        budgetAchat,
+        prevu: Math.round(coutTotal || budgetAchat),
+        isN1: false
+      });
+    }
+  }
+
+  // ── Onglet "Données" pour BU si non trouvé
+  const wsDon = wb.Sheets['Données'];
+  if (wsDon && !data.bu) {
+    const donRows = XLSX.utils.sheet_to_json(wsDon, {header:1, defval:null});
+    if (donRows[1] && donRows[1][5]) data.bu = String(donRows[1][5]).trim();
+  }
+
+  // Normaliser BU
+  const buMap = {
+    'MPE SYSTEMS':'MPE SYSTEMS','MPE EQUIPEMENT':'MPE EQUIPEMENT',
+    'MPE SERVICE':'MPE SERVICE','MPE DEVELOPPEMENT':'MPE DEVELOPPEMENT'
+  };
+  data.buNorm = buMap[data.bu] || 'MPE SYSTEMS';
+
+  return data;
+}
+
+function renderChiffragePreview(data) {
+  const preview = document.getElementById('chiffrage-preview');
+  const content = document.getElementById('chiffrage-preview-content');
+  const warning = document.getElementById('chiffrage-warning');
+  const btnImport = document.getElementById('btn-import-chiffrage');
+
+  // Vérifier si projet existe déjà
+  const exists = DB.projets.find(p =>
+    p.code.toUpperCase() === (data.code||'').toUpperCase()
+  );
+
+  let html = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+      <div><span style="color:var(--txt3)">Code :</span> <strong>${data.code||'—'}</strong></div>
+      <div><span style="color:var(--txt3)">Client :</span> ${data.client||'—'}</div>
+      <div><span style="color:var(--txt3)">Nom :</span> ${data.nom||'—'}</div>
+      <div><span style="color:var(--txt3)">BU :</span> ${data.bu||'—'}</div>
+      <div><span style="color:var(--txt3)">Marché :</span> <span style="color:var(--accent)">${fmt(data.marche)}</span></div>
+      <div><span style="color:var(--txt3)">Budget :</span> <span style="color:var(--green)">${fmt(data.budget)}</span></div>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--txt3)">
+      ${data.wbs.filter(w=>!w.isN1).length} postes WBS N2 détectés
+      · ${data.wbs.filter(w=>!w.isN1&&w.heuresPrevu>0).length} avec heures prévues
+      · ${data.wbs.filter(w=>!w.isN1&&w.prevu>0).length} avec budget
+    </div>`;
+
+  content.innerHTML = html;
+  preview.style.display = '';
+
+  if (exists) {
+    warning.style.display = '';
+    warning.innerHTML = `⛔ Le projet <strong>${data.code}</strong> existe déjà dans WBS Projets.<br>
+      Supprimez-le d'abord ou utilisez un code différent.`;
+    btnImport.style.display = 'none';
+  } else if (!data.code || data.code === 'saisir un code projet') {
+    warning.style.display = '';
+    warning.innerHTML = "⚠ Code projet non renseigné dans l'Excel. Remplissez la cellule R4 col D.";
+    btnImport.style.display = 'none';
+  } else {
+    warning.style.display = 'none';
+    btnImport.style.display = 'inline-flex';
+  }
+}
+
+function importChiffrage() {
+  if (!_chiffrageData) return;
+  const d = _chiffrageData;
+
+  // Créer le projet
+  const pid = uid();
+  DB.projets.push({
+    id: pid,
+    code:   d.code,
+    nom:    d.nom    || d.code,
+    client: d.client || '',
+    bu:     d.buNorm || 'MPE SYSTEMS',
+    statut: 'en_cours',
+    marche: d.marche || 0,
+    budget: d.budget || 0,
+    resp:   d.resp   || '',
+  });
+
+  // Créer les WBS N2
+  let wbsCount = 0;
+  d.wbs.filter(w => !w.isN1).forEach(w => {
+    if (!w.n2) return;
+    DB.wbs.push({
+      id:         uid(),
+      projetId:   pid,
+      n1:         w.n1,
+      n2:         w.n2,
+      libelle:    w.libelle || `${w.n1}-${w.n2}`,
+      prevu:      w.prevu || 0,
+      avancement: 0,
+      heuresPrevu: w.heuresPrevu || 0,
+    });
+    wbsCount++;
+  });
+
+  closeModal('modal-import-chiffrage');
+  _chiffrageData = null;
+
+  // Sync Firebase
+  if (useFirebase) {
+    syncToFirebase('projets');
+    syncToFirebase('wbs');
+  }
+
+  // Rafraîchir et sélectionner le nouveau projet
+  renderProjetSelect();
+  selectProjet(pid);
+  showPage('wbs');
+
+  notif(`✓ Projet ${d.code} importé — ${wbsCount} postes WBS créés`);
+}
+
+
 // ════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════
@@ -6101,8 +6369,8 @@ async function init() {
     const loaded=await loadFromFirebase();
     if(loaded&&DB.projets.length>0){
       renderAll();
-      // Sync heures en arrière-plan sans bloquer
-      syncHeuresFirebase(true);
+      // Sync heures en arrière-plan sans bloquer ni crasher
+      setTimeout(() => { syncHeuresFirebase(true).catch(e=>console.warn('Sync heures:', e)); }, 1000);
       return;
     }
   }
