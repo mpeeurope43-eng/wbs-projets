@@ -1802,6 +1802,12 @@ let DB = {
   wbs: [],
   facturations: [],
   depenses: [],
+  avenants: [],
+  depPlan: [],
+  ganttTasks: [],
+  jalons: [],
+  actions: [],
+  heuresEntries: [],
   demandes: [],
   users: []
 };
@@ -3748,6 +3754,8 @@ function deleteDepCell() {
   if (editId) DB.depPlan = DB.depPlan.filter(d=>d.id!==editId);
   closeModal('modal-dep-cell');
   renderDepenses();
+  if (useFirebase) syncToFirebase('depPlan');
+  saveLocalDB();
   notif('Supprimé');
 }
 
@@ -5494,12 +5502,26 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
 async function syncToFirebase(collection) {
   if (!db) return;
   try {
+    // 1. Récupérer les IDs existants dans Firestore
+    const snap = await db.collection(collection).get();
+    const remoteIds = snap.docs.map(d => d.id);
+    const localIds  = (DB[collection]||[]).filter(i=>i.id).map(i=>String(i.id));
+
     const batch = db.batch();
+
+    // 2. Supprimer les docs qui n'existent plus en local
+    remoteIds.forEach(rid => {
+      if (!localIds.includes(rid)) {
+        batch.delete(db.collection(collection).doc(rid));
+      }
+    });
+
+    // 3. Mettre à jour / créer les docs locaux
     (DB[collection]||[]).forEach(item => {
       if (!item.id) return;
-      const ref = db.collection(collection).doc(String(item.id));
-      batch.set(ref, item);
+      batch.set(db.collection(collection).doc(String(item.id)), item);
     });
+
     await batch.commit();
   } catch(e) { console.error('Firebase sync error ('+collection+'):', e); }
 }
@@ -5507,7 +5529,7 @@ async function syncToFirebase(collection) {
 async function loadFromFirebase() {
   if (!db) return false;
   try {
-    const collections = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions'];
+    const collections = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','demandes','users'];
     await Promise.all(collections.map(async col => {
       const snap = await db.collection(col).get();
       DB[col] = snap.docs.map(d => d.data());
@@ -6907,6 +6929,7 @@ function saveUser() {
   }
   closeModal('modal-user');
   renderSettings();
+  if (useFirebase) syncToFirebase('users');
   saveLocalDB();
 }
 
@@ -7203,6 +7226,7 @@ function saveDA(action) {
   closeModal('modal-da');
   renderDA();
   updateDABadge();
+  if (useFirebase) syncToFirebase('demandes');
   saveLocalDB();
 
   if (action === 'soumettre') {
@@ -7243,6 +7267,7 @@ function deleteDA() {
   closeModal('modal-da');
   renderDA();
   updateDABadge();
+  if (useFirebase) syncToFirebase('demandes');
   saveLocalDB();
   notif('DA supprimée');
 }
@@ -7400,6 +7425,7 @@ function signDA(action) {
   closeModal('modal-da-sign');
   renderDA();
   updateDABadge();
+  if (useFirebase) syncToFirebase('demandes');
   saveLocalDB();
 }
 
