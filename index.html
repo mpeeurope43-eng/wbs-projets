@@ -3347,8 +3347,12 @@ function renderDepPlanning(p) {
   const nowStr3 = new Date().toISOString().slice(0,7);
   const nowKeyDep = depGran === 'semaine' ? (() => {
     const now = new Date();
-    const j4 = new Date(now.getFullYear(),0,4);
-    const wn = Math.ceil(((now-j4)/86400000+j4.getDay()+1)/7);
+    const _d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const _dn = _d.getUTCDay() || 7;
+    _d.setUTCDate(_d.getUTCDate() + 4 - _dn);
+    const _ys = new Date(Date.UTC(_d.getUTCFullYear(), 0, 1));
+    const wn = Math.ceil(((((_d - _ys) / 86400000) + 1) / 7));
+    const _yr = _d.getUTCFullYear();
     return `${now.getFullYear()}-W${String(wn).padStart(2,'0')}`;
   })() : nowStr3;
 
@@ -4261,9 +4265,13 @@ let graphGran = 'mois';
 function getTodayKey(gran) {
   const now = new Date();
   if (gran === 'semaine') {
-    const j4 = new Date(now.getFullYear(),0,4);
-    const wn = Math.ceil(((now-j4)/86400000+j4.getDay()+1)/7);
-    return `${now.getFullYear()}-W${String(wn).padStart(2,'0')}`;
+    // Algorithme ISO 8601 correct
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const dayNum = d.getUTCDay() || 7; // lundi=1 ... dimanche=7
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum); // jeudi de la semaine courante
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const wn = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return `${d.getUTCFullYear()}-W${String(wn).padStart(2,'0')}`;
   }
   return now.toISOString().slice(0,7);
 }
@@ -4467,8 +4475,12 @@ function renderGraphiques() {
   const todayStr = new Date().toISOString().slice(0,7);
   const todayKey = graphGran === 'semaine' ? (() => {
     const now = new Date();
-    const j4 = new Date(now.getFullYear(),0,4);
-    const wn = Math.ceil(((now - j4)/86400000 + j4.getDay() + 1)/7);
+    const _d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const _dn = _d.getUTCDay() || 7;
+    _d.setUTCDate(_d.getUTCDate() + 4 - _dn);
+    const _ys = new Date(Date.UTC(_d.getUTCFullYear(), 0, 1));
+    const wn = Math.ceil(((((_d - _ys) / 86400000) + 1) / 7));
+    const _yr = _d.getUTCFullYear();
     return `${now.getFullYear()}-W${String(wn).padStart(2,'0')}`;
   })() : todayStr;
   const todayIdx = allMois.findIndex(m => m >= (graphGran==='semaine' ? todayKey : todayStr));
