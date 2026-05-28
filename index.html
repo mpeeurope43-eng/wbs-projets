@@ -2450,7 +2450,9 @@ function renderWBS() {
         <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;background:var(--bg2);border:1px solid var(--border)">
           <span class="td-code" style="font-size:10px">${code}</span>
           <span style="flex:1;font-size:13px">${w.libelle}</span>
-          <span class="td-mono" style="font-size:12px;color:var(--txt2)">${fmt(w.prevu)}</span>
+          <span class="td-mono" style="font-size:12px;color:var(--txt2)" title="Coût prévu">${fmt(w.prevu)}</span>
+          ${w.prixVente ? `<span class="td-mono" style="font-size:11px;color:var(--accent)" title="Prix de vente">${fmt(w.prixVente)}</span>` : ''}
+          ${w.margePct ? `<span style="font-size:11px;color:${w.margePct>=0?'var(--green)':'var(--red)'}" title="Marge">${w.margePct}%</span>` : ''}
           <span style="font-size:11px;color:var(--txt3);min-width:60px;text-align:right">RAR: ${fmt(rar)}</span>
           <div style="width:80px;cursor:pointer" onclick="openEditWBS('${w.id}')" title="Modifier avancement">
             <div class="progress"><div class="progress-bar ${col2}" style="width:${w.avancement||0}%"></div></div>
@@ -2851,6 +2853,7 @@ function saveFacCell() {
   renderFacturation();
   notif('Facturation enregistrée ✓');
   if (useFirebase) syncToFirebase('facturations');
+  saveLocalDB();
 }
 
 function deleteFacCell() {
@@ -2860,12 +2863,14 @@ function deleteFacCell() {
   renderFacturation();
   notif('Supprimé');
   if (useFirebase) syncToFirebase('facturations');
+  saveLocalDB();
 }
 
 function deleteFacEntry(id) {
   DB.facturations = DB.facturations.filter(f=>f.id!==id);
   renderFacturation();
   if (useFirebase) syncToFirebase('facturations');
+  saveLocalDB();
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -3447,6 +3452,7 @@ function saveDepCell() {
   renderDepenses();
   notif('Dépense prévisionnelle enregistrée ✓');
   if (useFirebase) syncToFirebase('depPlan');
+  saveLocalDB();
 }
 
 function deleteDepCell() {
@@ -3724,6 +3730,7 @@ function confirmProjetImport(mode) {
   showPage('projets');
   notif(`Projet ${d.codeProjet} importé — ${d.wbsPostes.length} postes WBS · ${d.facPrev.length} échéances`);
   if (useFirebase) { syncToFirebase('projets'); syncToFirebase('wbs'); syncToFirebase('facturations'); }
+  saveLocalDB();
 }
 
 
@@ -3956,6 +3963,7 @@ function confirmImport() {
   closeModal('modal-import');
   notif(`Import ADV — ${added} lignes ajoutées, ${skipped} ignorées`);
   if (useFirebase) syncToFirebase('depenses');
+  saveLocalDB();
   const page = document.querySelector('.page.active');
   if (page) renderPage(page.id.replace('page-', ''));
 }
@@ -4061,6 +4069,7 @@ function renderGraphiques() {
     <div class="kpi blue"><div class="kpi-label">Facturé client</div><div class="kpi-value">${fmtK(facRealTotal)||'0 €'}</div><div class="kpi-sub">${marche?Math.round(facRealTotal/marche*100):0}% du marché</div></div>
     <div class="kpi amber"><div class="kpi-label">Dép. engagées</div><div class="kpi-value">${fmtK(depEngTotal+depPayeTotal+coutHeuresGraph)||'0 €'}</div><div class="kpi-sub">dont heures : ${fmtK(coutHeuresGraph)}</div></div>
     <div class="kpi"><div class="kpi-label">Marge réelle à date</div><div class="kpi-value" style="color:${mrgCol}">${facRealTotal||depPayeTotal ? (margeReelle>=0?'+':'')+fmtK(margeReelle) : '—'}</div><div class="kpi-sub">facturé − dép. payées</div></div>
+    ${p.risquePct !== undefined && p.risquePct !== null ? `<div class="kpi" style="border-color:${p.risquePct>20?'var(--red)':p.risquePct>10?'var(--amber)':'var(--border)'}"><div class="kpi-label">% Risque projet</div><div class="kpi-value" style="color:${p.risquePct>20?'var(--red)':p.risquePct>10?'var(--amber)':'var(--green)'}">${p.risquePct}%</div><div class="kpi-sub">chiffrage AVP</div></div>` : ''}
   `;
 
   // ── Axe temporel : utilise les dates du projet si pas de données saisies
@@ -4584,6 +4593,7 @@ function saveProjet() {
   renderProjets();
   notif('Projet enregistré ✓');
   if (useFirebase) syncToFirebase('projets');
+  saveLocalDB();
 }
 
 function deleteProjet() {
@@ -4614,6 +4624,8 @@ function deleteProjet() {
   if (useFirebase) {
     ['projets','wbs','depenses','facturations','avenants','heures','actions','gantt','jalons'].forEach(k => syncToFirebase(k));
   }
+  saveLocalDB();
+  saveLocalDB();
 }
 
 
@@ -4702,6 +4714,7 @@ function saveAvenant() {
   renderProjetSelect();
   notif('Avenant ' + data.numero + ' enregistré ✓');
   if (useFirebase) { syncToFirebase('avenants'); syncToFirebase('wbs'); }
+  saveLocalDB();
 }
 
 function deleteAvenant() {
@@ -4715,6 +4728,7 @@ function deleteAvenant() {
   renderWBS();
   notif('Avenant supprimé');
   if (useFirebase) { syncToFirebase('avenants'); syncToFirebase('wbs'); }
+  saveLocalDB();
 }
 
 function onWBSN1Change() {
@@ -4787,6 +4801,7 @@ function saveEditWBS() {
   renderWBS();
   notif('Poste WBS mis à jour ✓');
   if (useFirebase) syncToFirebase('wbs');
+  saveLocalDB();
 }
 
 function deleteWBSEntry() {
@@ -4801,6 +4816,7 @@ function deleteWBSEntry() {
   renderWBS();
   notif('Poste WBS supprimé');
   if (useFirebase) { syncToFirebase('wbs'); syncToFirebase('avenants'); }
+  saveLocalDB();
 }
 
 function openModalWBS() {
@@ -4853,6 +4869,7 @@ function saveWBS() {
     // Si prix de revient saisi, l'utiliser comme montant prévu
     if (avRevient) data.prevu = avRevient;
     if (useFirebase) syncToFirebase('avenants');
+  saveLocalDB();
   }
 
   DB.wbs.push(data);
@@ -4861,6 +4878,7 @@ function saveWBS() {
   renderWBS();
   notif('Poste WBS ajouté ✓');
   if (useFirebase) syncToFirebase('wbs');
+  saveLocalDB();
 }
 
 function openModalFacturation() {
@@ -4884,6 +4902,7 @@ function saveFacturation() {
   renderFacturation();
   notif('Facturation enregistrée ✓');
   if (useFirebase) syncToFirebase('facturations');
+  saveLocalDB();
 }
 
 function openNewDepReelle(key, wbsId) {
@@ -5005,6 +5024,7 @@ function saveEditDepense() {
   renderDepenses();
   notif('Dépense modifiée ✓');
   if (useFirebase) syncToFirebase('depenses');
+  saveLocalDB();
 }
 
 function deleteDepense() {
@@ -5015,6 +5035,7 @@ function deleteDepense() {
   renderDepenses();
   notif('Dépense supprimée');
   if (useFirebase) syncToFirebase('depenses');
+  saveLocalDB();
 }
 
 function openModalDepense(tab) {
@@ -5130,6 +5151,7 @@ function saveDepense() {
     renderDepenses();
     notif('Frais enregistrés ✓');
     if (useFirebase) syncToFirebase('depenses');
+  saveLocalDB();
     return;
   }
 
@@ -5162,6 +5184,7 @@ function saveDepense() {
   renderDepenses();
   notif('Dépense enregistrée ✓');
   if (useFirebase) syncToFirebase('depenses');
+  saveLocalDB();
 }
 
 // Fermer modal en cliquant dehors
@@ -5198,6 +5221,33 @@ async function loadFromFirebase() {
 }
 
 // ════════════════════════════════════════════════════════════════
+// LOCALSTORAGE FALLBACK
+// ════════════════════════════════════════════════════════════════
+const LS_KEY = 'mpe_wbs_db_v1';
+const LS_COLS = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','heuresEntries'];
+
+function saveLocalDB() {
+  if (useFirebase) return; // Firebase gère la persistance
+  try {
+    const snap = {};
+    LS_COLS.forEach(k => { snap[k] = DB[k] || []; });
+    snap._activeProjetId = activeProjetId;
+    localStorage.setItem(LS_KEY, JSON.stringify(snap));
+  } catch(e) { console.warn('LocalStorage save failed:', e); }
+}
+
+function loadLocalDB() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const snap = JSON.parse(raw);
+    LS_COLS.forEach(k => { if (snap[k]) DB[k] = snap[k]; });
+    if (snap._activeProjetId) activeProjetId = snap._activeProjetId;
+    return DB.projets && DB.projets.length > 0;
+  } catch(e) { console.warn('LocalStorage load failed:', e); return false; }
+}
+
+// ════════════════════════════════════════════════════════════════
 // GANTT
 // ════════════════════════════════════════════════════════════════
 let ganttGran = 'semaine';
@@ -5208,6 +5258,33 @@ function setGanttGran(g) {
   document.getElementById('gantt-gran-sem').classList.toggle('active', g==='semaine');
   document.getElementById('gantt-gran-mois').classList.toggle('active', g==='mois');
   renderGantt();
+}
+
+// ════════════════════════════════════════════════════════════════
+// LOCALSTORAGE FALLBACK
+// ════════════════════════════════════════════════════════════════
+const LS_KEY = 'mpe_wbs_db_v1';
+const LS_COLS = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','heuresEntries'];
+
+function saveLocalDB() {
+  if (useFirebase) return; // Firebase gère la persistance
+  try {
+    const snap = {};
+    LS_COLS.forEach(k => { snap[k] = DB[k] || []; });
+    snap._activeProjetId = activeProjetId;
+    localStorage.setItem(LS_KEY, JSON.stringify(snap));
+  } catch(e) { console.warn('LocalStorage save failed:', e); }
+}
+
+function loadLocalDB() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const snap = JSON.parse(raw);
+    LS_COLS.forEach(k => { if (snap[k]) DB[k] = snap[k]; });
+    if (snap._activeProjetId) activeProjetId = snap._activeProjetId;
+    return DB.projets && DB.projets.length > 0;
+  } catch(e) { console.warn('LocalStorage load failed:', e); return false; }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -5548,6 +5625,33 @@ function renderGantt() {
   document.getElementById('gantt-container').innerHTML = svg;
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// LOCALSTORAGE FALLBACK
+// ════════════════════════════════════════════════════════════════
+const LS_KEY = 'mpe_wbs_db_v1';
+const LS_COLS = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','heuresEntries'];
+
+function saveLocalDB() {
+  if (useFirebase) return; // Firebase gère la persistance
+  try {
+    const snap = {};
+    LS_COLS.forEach(k => { snap[k] = DB[k] || []; });
+    snap._activeProjetId = activeProjetId;
+    localStorage.setItem(LS_KEY, JSON.stringify(snap));
+  } catch(e) { console.warn('LocalStorage save failed:', e); }
+}
+
+function loadLocalDB() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const snap = JSON.parse(raw);
+    LS_COLS.forEach(k => { if (snap[k]) DB[k] = snap[k]; });
+    if (snap._activeProjetId) activeProjetId = snap._activeProjetId;
+    return DB.projets && DB.projets.length > 0;
+  } catch(e) { console.warn('LocalStorage load failed:', e); return false; }
+}
 
 // ════════════════════════════════════════════════════════════════
 // GANTT HELPERS
@@ -6271,9 +6375,30 @@ function parseChiffrageXLSX(wb) {
   data.resp    = getCell(6, 3);  // R7 col D
   data.bu      = getCell(7, 3);  // R8 col D
 
-  // Budget et prix de vente (col M = index 12)
-  data.budget  = parseFloat(getCell(3, 12)) || 0;   // R4 col M
-  data.marche  = parseFloat(getCell(4, 12)) || 0;   // R5 col M
+  // Budget et prix de vente — scanner les colonnes K(10) à N(13) pour trouver les valeurs
+  const findVal = (rowIdx) => {
+    for (let c = 10; c <= 13; c++) {
+      const v = parseFloat(getCell(rowIdx, c));
+      if (!isNaN(v) && v > 0) return v;
+    }
+    return 0;
+  };
+  data.budget = findVal(3);  // R4 — Budget initial
+  // Prix de vente AVEC remise = R8 (index 7) dans le bloc CHIFFRAGE AVP
+  data.marche = findVal(7) || findVal(8);  // R8 ou R9 selon mise en page
+  // % Risque — col O(14) ou P(15), lignes R5 à R7
+  let risquePct = 0;
+  for (let r = 4; r <= 7; r++) {
+    for (let c = 14; c <= 16; c++) {
+      const raw = getCell(r, c);
+      if (raw && raw !== '0') {
+        const v = parseFloat(raw);
+        if (!isNaN(v)) { risquePct = v; break; }
+      }
+    }
+    if (risquePct) break;
+  }
+  data.risquePct = risquePct;
 
   // ── Parser les WBS (à partir de R15, index 14)
   data.wbs = [];
@@ -6289,9 +6414,12 @@ function parseChiffrageXLSX(wb) {
     const colA = row[0] !== null && row[0] !== undefined ? String(row[0]).trim() : '';
     const colB = row[1] !== null && row[1] !== undefined ? String(row[1]).trim() : '';
     const colC = row[2] !== null && row[2] !== undefined ? String(row[2]).trim() : '';
-    const colE = row[4]; // Heures prévues
+    const colE = row[4];  // Heures prévues
     const colN = row[13]; // Budget achat prévu €
-    const colO = row[14]; // Coût prévu total
+    const colO = row[14]; // Cout Prévue (€)
+    const colP = row[15]; // Marge (%)
+    const colQ = row[16]; // Prix de vente (€)
+    const colR = row[17]; // Marge (€)
 
     // N1 : col A non vide et col B vide
     if (colA && !colB && colA !== '0') {
@@ -6322,12 +6450,19 @@ function parseChiffrageXLSX(wb) {
       }
       const budgetAchat = parseFloat(colN) || 0;
       const coutTotal   = parseFloat(colO) || 0;
+      const prixVente  = parseFloat(colQ) || 0;
+      const margeEur   = parseFloat(colR) || 0;
+      const margePct   = parseFloat(colP) || 0;
       data.wbs.push({
         n1: currentN1, n2,
         libelle: colD || colC || `${currentN1}-${n2}`,
         heuresPrevu,
         budgetAchat,
-        prevu: Math.round(coutTotal || budgetAchat),
+        coutPrevu:  Math.round(parseFloat(colO) || budgetAchat),
+        prixVente:  Math.round(prixVente),
+        margeEur:   Math.round(margeEur),
+        margePct:   Math.round(margePct * 10) / 10,
+        prevu: Math.round(parseFloat(colO) || budgetAchat),
         isN1: false
       });
     }
@@ -6402,14 +6537,15 @@ function importChiffrage() {
   const pid = uid();
   DB.projets.push({
     id: pid,
-    code:   d.code,
-    nom:    d.nom    || d.code,
-    client: d.client || '',
-    bu:     d.buNorm || 'MPE SYSTEMS',
-    statut: 'en_cours',
-    marche: d.marche || 0,
-    budget: d.budget || 0,
-    resp:   d.resp   || '',
+    code:      d.code,
+    nom:       d.nom    || d.code,
+    client:    d.client || '',
+    bu:        d.buNorm || 'MPE SYSTEMS',
+    statut:    'en_cours',
+    marche:    d.marche || 0,
+    budget:    d.budget || 0,
+    resp:      d.resp   || '',
+    risquePct: d.risquePct || 0,
   });
 
   // Créer les WBS N2
@@ -6417,13 +6553,16 @@ function importChiffrage() {
   d.wbs.filter(w => !w.isN1).forEach(w => {
     if (!w.n2) return;
     DB.wbs.push({
-      id:         uid(),
-      projetId:   pid,
-      n1:         w.n1,
-      n2:         w.n2,
-      libelle:    w.libelle || `${w.n1}-${w.n2}`,
-      prevu:      w.prevu || 0,
-      avancement: 0,
+      id:          uid(),
+      projetId:    pid,
+      n1:          w.n1,
+      n2:          w.n2,
+      libelle:     w.libelle || `${w.n1}-${w.n2}`,
+      prevu:       w.coutPrevu || w.prevu || 0,
+      prixVente:   w.prixVente || 0,
+      margeEur:    w.margeEur  || 0,
+      margePct:    w.margePct  || 0,
+      avancement:  0,
       heuresPrevu: w.heuresPrevu || 0,
     });
     wbsCount++;
@@ -6437,6 +6576,8 @@ function importChiffrage() {
     syncToFirebase('projets');
     syncToFirebase('wbs');
   }
+  saveLocalDB();
+  saveLocalDB();
 
   // Rafraîchir et sélectionner le nouveau projet
   renderProjetSelect();
@@ -6460,10 +6601,14 @@ async function init() {
     const loaded=await loadFromFirebase();
     if(loaded&&DB.projets.length>0){
       renderAll();
-      // Sync heures en arrière-plan sans bloquer ni crasher
       setTimeout(() => { syncHeuresFirebase(true).catch(e=>console.warn('Sync heures:', e)); }, 1000);
       return;
     }
+  }
+  // Fallback localStorage
+  if (loadLocalDB()) {
+    renderAll();
+    return;
   }
   loadDemoData();
 }
