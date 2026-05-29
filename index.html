@@ -1756,6 +1756,20 @@ tr:hover td{background:var(--bg3)}
           </div>
           <div id="users-list"></div>
         </div>
+        <div class="card" style="border-color:var(--green);margin-bottom:20px">
+          <div class="section-hd" style="display:flex;align-items:center;justify-content:space-between">
+            <h2>💾 Sauvegarde & Restauration</h2>
+          </div>
+          <p style="font-size:12px;color:var(--txt3);margin-bottom:12px">Exportez régulièrement vos données. En cas de problème Firebase, ce fichier permet de tout restaurer.</p>
+          <div id="wbs-backup-check" style="display:none;margin-bottom:12px;padding:10px;border-radius:8px;font-size:12px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="checkAndExportWBSBackup()">🔍 Vérifier & Exporter sauvegarde</button>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+              📂 Restaurer depuis fichier
+              <input type="file" accept=".json" style="display:none" onchange="importWBSBackup(this)">
+            </label>
+          </div>
+        </div>
         <div class="card">
           <div class="section-hd"><h2>Règles de signature</h2></div>
           <div style="font-size:12px;color:var(--txt2);line-height:1.8">
@@ -5502,10 +5516,23 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
 async function syncToFirebase(collection) {
   if (!db) return;
   try {
+    const localData = DB[collection] || [];
+
+    // GARDE-FOU : ne jamais écrire collection critique vide
+    const critiques = ['projets','wbs','demandes'];
+    if (critiques.includes(collection) && localData.length === 0) {
+      // Vérifier si Firebase a des données avant d'écraser
+      const check = await db.collection(collection).limit(1).get();
+      if (!check.empty) {
+        console.warn('⛔ syncToFirebase annulé —', collection, 'vide localement mais pas dans Firebase');
+        return;
+      }
+    }
+
     // 1. Récupérer les IDs existants dans Firestore
     const snap = await db.collection(collection).get();
     const remoteIds = snap.docs.map(d => d.id);
-    const localIds  = (DB[collection]||[]).filter(i=>i.id).map(i=>String(i.id));
+    const localIds  = localData.filter(i=>i.id).map(i=>String(i.id));
 
     const batch = db.batch();
 
@@ -5517,7 +5544,7 @@ async function syncToFirebase(collection) {
     });
 
     // 3. Mettre à jour / créer les docs locaux
-    (DB[collection]||[]).forEach(item => {
+    localData.forEach(item => {
       if (!item.id) return;
       batch.set(db.collection(collection).doc(String(item.id)), item);
     });
@@ -7657,6 +7684,70 @@ ${da.conditions?.length?`<div class="section-title">Conditions de paiement</div>
     iframe.contentWindow.print();
     setTimeout(() => document.body.removeChild(iframe), 2000);
   }, 400);
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// SAUVEGARDE & RESTAURATION WBS
+// ════════════════════════════════════════════════════════════════
+function checkAndExportWBSBackup() {
+  const el = document.getElementById('wbs-backup-check');
+  const issues = [];
+  if (!DB.projets?.length)  issues.push('⚠️ Aucun projet');
+  if (!DB.wbs?.length)      issues.push('⚠️ Aucun WBS');
+
+  if (issues.length) {
+    el.style.display = '';
+    el.style.background = 'rgba(239,68,68,.1)';
+    el.style.border = '1px solid var(--red)';
+    el.style.color = 'var(--red)';
+    el.innerHTML = '<strong>Problèmes détectés :</strong><br>' + issues.join('<br>');
+    if (!confirm('Problemes detectes. Exporter quand meme ?')) return;
+  } else {
+    el.style.display = '';
+    el.style.background = 'rgba(34,197,94,.1)';
+    el.style.border = '1px solid var(--green)';
+    el.style.color = 'var(--green)';
+    el.innerHTML = '✅ <strong>' + DB.projets.length + ' projets</strong>, ' + DB.wbs.length + ' postes WBS, ' + (DB.demandes?.length||0) + ' DA — OK';
+  }
+
+  const backup = {
+    _version: 1,
+    _date: new Date().toISOString(),
+    _app: 'MPE-WBS',
+    ...Object.fromEntries(
+      ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','heuresEntries','demandes','users']
+      .map(k => [k, DB[k]||[]])
+    )
+  };
+
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'MPE-WBS-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+}
+
+function importWBSBackup(input) {
+  const file = input.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data._app || data._app !== 'MPE-WBS') { alert('Fichier invalide.'); return; }
+      const summary = 'Fichier du ' + new Date(data._date).toLocaleDateString('fr-FR') +
+        '\n\n• ' + (data.projets||[]).length + ' projets\n• ' + (data.wbs||[]).length + ' postes WBS\n• ' + (data.demandes||[]).length + ' DA\n\n⚠️ Remplacera toutes les données actuelles. Continuer ?';
+      if (!confirm(summary)) return;
+      const cols = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','heuresEntries','demandes','users'];
+      cols.forEach(k => { if(data[k]) DB[k] = data[k]; });
+      saveLocalDB();
+      if(useFirebase) cols.forEach(k => syncToFirebase(k));
+      renderAll();
+      notif('✅ Restauration réussie — ' + (data.projets||[]).length + ' projets rechargés');
+    } catch(err) { alert('❌ Erreur : ' + err.message); }
+  };
+  reader.readAsText(file);
+  input.value = '';
 }
 
 
