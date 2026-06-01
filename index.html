@@ -2750,6 +2750,9 @@ function renderWBS() {
       const deps = DB.depenses.filter(d=>d.wbsId===w.id);
       const paye = deps.filter(d=>d.statut==='paye').reduce((s,d)=>s+d.montant,0);
       const rar = (w.prevu||0) - paye;
+      // Heures pointées sur ce poste
+      const proj = activeProjetId ? getProjet(activeProjetId) : null;
+      const hData = proj ? getHeuresWBSPost(proj.code, w.n1, w.n2) : {heures:0,cout:0,count:0};
       html += `<div class="wbs-indent" style="margin-top:2px">
         <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;background:var(--bg2);border:1px solid var(--border)">
           <span class="td-code" style="font-size:10px">${code}</span>
@@ -2757,6 +2760,7 @@ function renderWBS() {
           <span class="td-mono" style="font-size:12px;color:var(--txt2)" title="Coût prévu">${fmt(w.prevu)}</span>
           ${w.prixVente ? `<span class="td-mono" style="font-size:11px;color:var(--accent)" title="Prix de vente">${fmt(w.prixVente)}</span>` : ''}
           ${w.margePct ? `<span style="font-size:11px;color:${w.margePct>=0?'var(--green)':'var(--red)'}" title="Marge">${w.margePct}%</span>` : ''}
+          ${hData.heures>0 ? `<span style="font-size:11px;color:var(--accent);background:var(--accent-dim);border-radius:5px;padding:2px 7px" title="Heures pointées (${hData.count} saisies)">⏱ ${hData.heures.toFixed(1)}h · ${fmt(hData.cout)}</span>` : ''}
           <span style="font-size:11px;color:var(--txt3);min-width:60px;text-align:right">RAR: ${fmt(rar)}</span>
           <div style="width:80px;cursor:pointer" onclick="openEditWBS('${w.id}')" title="Modifier avancement">
             <div class="progress"><div class="progress-bar ${col2}" style="width:${w.avancement||0}%"></div></div>
@@ -6350,6 +6354,21 @@ async function syncHeuresFirebase(silent) {
 }
 
 function msToH(ms) { return Math.round(ms / 3600000 * 10) / 10; }
+
+function getHeuresWBSPost(projetCode, n1, n2) {
+  // Returns {heures, cout} for a specific WBS post from pointage entries
+  const entries = (DB.heuresEntries || []).filter(e => {
+    const ep = (e.project||'').toUpperCase().trim();
+    if (ep !== projetCode && !ep.startsWith(projetCode+'-') && !ep.startsWith(projetCode+' ')) return false;
+    const en1 = String(e.wbs||'').replace(/^-/,'').trim();
+    const en2 = e.taskNum ? String(e.taskNum).trim() : '';
+    if (n2) return en1 === String(n1) && en2 === String(n2);
+    return en1 === String(n1);
+  });
+  const totalMs = entries.reduce((s,e) => s+(e.ms||0), 0);
+  const cout = entries.reduce((s,e) => s+calcCoutEntry(e), 0);
+  return { heures: msToH(totalMs), cout, count: entries.length };
+}
 function hToStr(h) { return h.toFixed(1) + 'h'; }
 
 function getHeuresForProjet(pid) {
@@ -6428,11 +6447,13 @@ function renderHeuresParWBS(pid, entries) {
   const p = pid ? getProjet(pid) : null;
   const ws = pid ? getWBSProjet(pid) : [];
 
-  // Grouper par WBS
+  // Grouper par WBS — clé = n1 + taskNum (ex: "2-1") ou n1 seul
   const wbsMap = {};
   entries.forEach(e => {
-    const key = (e.wbs || '—').trim();
-    if (!wbsMap[key]) wbsMap[key] = { entries:[], totalMs:0, totalCout:0 };
+    const n1 = String(e.wbs || '').replace(/^-/,'').trim();
+    const n2 = e.taskNum ? String(e.taskNum).trim() : '';
+    const key = n2 ? `${n1}-${n2}` : (n1 || '—');
+    if (!wbsMap[key]) wbsMap[key] = { entries:[], totalMs:0, totalCout:0, n1, n2 };
     wbsMap[key].entries.push(e);
     wbsMap[key].totalMs   += e.ms||0;
     wbsMap[key].totalCout += calcCoutEntry(e);
@@ -6455,7 +6476,11 @@ function renderHeuresParWBS(pid, entries) {
     const h = msToH(data.totalMs);
     const pct = totalH ? Math.round(h/totalH*100) : 0;
     // Trouver le libellé WBS dans DB
-    const wbsMatch = ws.find(w => `${w.n1}-${w.n2}` === wbsCode || `${w.n1}` === wbsCode);
+    const {n1:_n1, n2:_n2} = data;
+    const wbsMatch = ws.find(w =>
+      (String(w.n1)===_n1 && String(w.n2)===_n2) ||
+      (String(w.n1)===_n1 && !_n2)
+    );
     const libelle = wbsMatch ? wbsMatch.libelle : (p ? p.code+'-'+wbsCode : wbsCode);
     html += `<tr onclick="showHeuresDetail('wbs','${wbsCode}',${JSON.stringify(data.entries).replace(/"/g,'&quot;')})" style="cursor:pointer">
       <td><span class="td-code" style="font-size:10px">${p?p.code+'-':''}${wbsCode}</span></td>
@@ -6570,29 +6595,51 @@ function renderHeuresParSemaine(pid, entries) {
 
 function showHeuresDetail(type, key, entriesJson) {
   const entries = typeof entriesJson === 'string' ? JSON.parse(entriesJson.replace(/&quot;/g,'"')) : entriesJson;
+  const getUserName = (e) => {
+    if (e.user && !e.user.startsWith('u')) return e.user;
+    const u = (DB.heuresUsers||[]).find(u => u.id===e.userId || u.id===e.user);
+    return u ? u.name : (e.user || e.userId || 'Inconnu');
+  };
   let html = `<div class="card">
     <div class="section-hd" style="margin-bottom:12px">
       <h2>Détail — ${key}</h2>
       <span style="font-size:12px;color:var(--txt3)">${entries.length} saisie(s)</span>
     </div>
     <div class="table-wrap" style="border:none"><table>
-      <thead><tr><th>Date</th><th>Collaborateur</th><th>WBS</th><th>Tâche / Description</th><th style="text-align:right">Durée</th><th style="text-align:right">Coût</th></tr></thead>
+      <thead><tr><th>Date</th><th>Collaborateur</th><th>WBS complet</th><th>Tâche / Description</th><th style="text-align:right">Durée</th><th style="text-align:right">Coût</th><th></th></tr></thead>
       <tbody>`;
 
   entries.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(e => {
     const h = msToH(e.ms||0);
+    const n1 = String(e.wbs||'').replace(/^-/,'').trim();
+    const n2 = e.taskNum ? String(e.taskNum).trim() : '';
+    const wbsFull = `${e.project||''}${n1?'-'+n1:''}${n2?'-'+n2:''}`;
     html += `<tr>
       <td style="font-size:11px;white-space:nowrap">${fmtDate(e.date)}</td>
-      <td style="font-size:12px">${e.user||e.userId||'?'}</td>
-      <td><span class="td-code" style="font-size:10px">${e.wbs||'—'}</span></td>
+      <td style="font-size:12px">${getUserName(e)}</td>
+      <td><span class="td-code" style="font-size:10px">${wbsFull}</span></td>
       <td style="font-size:11px;color:var(--txt2)">${e.task||''} ${e.desc?'— '+e.desc:''}</td>
       <td style="text-align:right;font-weight:600;color:var(--accent)">${hToStr(h)}</td>
       <td style="text-align:right;font-size:11px;color:var(--green)">${fmt(calcCoutEntry(e))}</td>
+      <td><button onclick="deleteHeureEntry('${e.id}','${type}','${key}')" style="background:none;border:none;color:var(--txt3);cursor:pointer;font-size:12px;padding:2px 5px" title="Supprimer" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--txt3)'">✕</button></td>
     </tr>`;
   });
 
   html += '</tbody></table></div></div>';
   document.getElementById('heures-detail').innerHTML = html;
+}
+
+function deleteHeureEntry(entryId, type, key) {
+  if (!confirm('Supprimer cette saisie de pointage ?')) return;
+  DB.heuresEntries = (DB.heuresEntries||[]).filter(e => String(e.id) !== String(entryId));
+  notif('Saisie supprimée');
+  // Rafraîchir la vue
+  const pid = activeProjetId;
+  const entries = pid ? getHeuresForProjet(pid) : (DB.heuresEntries||[]);
+  if (heureView === 'wbs') renderHeuresParWBS(pid, entries);
+  else if (heureView === 'person') renderHeuresParPerson(pid, entries);
+  else renderHeuresParSemaine(pid, entries);
+  document.getElementById('heures-detail').innerHTML = '';
 }
 
 
