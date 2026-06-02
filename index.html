@@ -4476,11 +4476,28 @@ function renderGraphiques() {
     const fr = facs.filter(f=>facMatchKey(f,m)&&f.type==='realise').reduce((s,f)=>s+f.montant,0);
     // dépenses prévisionnelles = DB.depPlan
     const dp = depPlanProjet.filter(d=>depPlanMatchKey(d,m)).reduce((s,d)=>s+(d.montant||0),0);
-    // dépenses réelles = DB.depenses payées+engagées
+    // dépenses réelles = DB.depenses payées+engagées + coût heures pointées sur cette période
     const dr = deps.filter(d=>(d.statut==='paye'||d.statut==='engage')&&depMatchKey(d,m)).reduce((s,d)=>s+d.montant,0);
-    cumFacPrev += fp; cumFacReal += fr; cumDepPrev += dp; cumDepReal += dr;
+    // Ajouter les heures internes pointées sur cette période
+    const heuresPeriode = getHeuresForProjet(pid).filter(e => {
+      if (!e.date) return false;
+      if (m.includes('-W')) {
+        // semaine : convertir date en clé semaine
+        const ed = new Date(e.date);
+        const dn = ed.getUTCDay()||7;
+        ed.setUTCDate(ed.getUTCDate()+4-dn);
+        const ys = new Date(Date.UTC(ed.getUTCFullYear(),0,1));
+        const wn = Math.ceil((((ed-ys)/86400000)+1)/7);
+        const wKey = `${ed.getUTCFullYear()}-W${String(wn).padStart(2,'0')}`;
+        return wKey === m;
+      }
+      return e.date.slice(0,7) === m;
+    });
+    const drHeures = heuresPeriode.reduce((s,e) => s + calcCoutEntry(e), 0);
+    const drTotal = dr + drHeures;
+    cumFacPrev += fp; cumFacReal += fr; cumDepPrev += dp; cumDepReal += drTotal;
     if (fp) hasFacPrev=true; if (fr) hasFacReal=true;
-    if (dp) hasDepPrev=true; if (dr) hasDepReal=true;
+    if (dp) hasDepPrev=true; if (drTotal) hasDepReal=true;
     sFacPrev.push(cumFacPrev > 0 ? cumFacPrev : null);
     sFacReal.push(cumFacReal > 0 ? cumFacReal : null);
     sDepPrev.push(cumDepPrev > 0 ? cumDepPrev : null);
