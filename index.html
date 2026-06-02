@@ -6456,11 +6456,20 @@ function renderHeuresParWBS(pid, entries) {
   const p = pid ? getProjet(pid) : null;
   const ws = pid ? getWBSProjet(pid) : [];
 
-  // Grouper par WBS — clé = n1 + taskNum (ex: "2-1") ou n1 seul
+  // Grouper par WBS — fusionner N1-seul avec N1-N2 si même tâche
   const wbsMap = {};
+  // D'abord construire un mapping tâche→N2 depuis les WBS du projet
+  const taskNumMap = {};
+  ws.forEach(w => { if(w.libelle) taskNumMap[w.libelle.toLowerCase()] = {n1:String(w.n1), n2:String(w.n2)}; });
+
   entries.forEach(e => {
     const n1 = String(e.wbs || '').replace(/^-/,'').trim();
-    const n2 = e.taskNum ? String(e.taskNum).trim() : '';
+    let n2 = e.taskNum ? String(e.taskNum).trim() : '';
+    // Si pas de N2, essayer de le trouver via le nom de la tâche
+    if (!n2 && e.task) {
+      const mapped = taskNumMap[(e.task||'').toLowerCase()];
+      if (mapped && mapped.n1 === n1) n2 = mapped.n2;
+    }
     const key = n2 ? `${n1}-${n2}` : (n1 || '—');
     if (!wbsMap[key]) wbsMap[key] = { entries:[], totalMs:0, totalCout:0, n1, n2 };
     wbsMap[key].entries.push(e);
