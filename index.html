@@ -6356,14 +6356,23 @@ async function syncHeuresFirebase(silent) {
 function msToH(ms) { return Math.round(ms / 3600000 * 10) / 10; }
 
 function getHeuresWBSPost(projetCode, n1, n2) {
-  // Returns {heures, cout} for a specific WBS post from pointage entries
+  const sn1 = String(n1), sn2 = String(n2);
+  const pCode = (projetCode||'').toUpperCase();
+  // Trouver le libellé de la tâche N2 pour matcher aussi les entrées sans taskNum
+  const wbsEntry = (DB.wbs||[]).find(w => w.projetId && String(w.n1)===sn1 && String(w.n2)===sn2);
+  const taskLabel = wbsEntry?.libelle || '';
+
   const entries = (DB.heuresEntries || []).filter(e => {
     const ep = (e.project||'').toUpperCase().trim();
-    if (ep !== projetCode && !ep.startsWith(projetCode+'-') && !ep.startsWith(projetCode+' ')) return false;
+    if (ep !== pCode && !ep.startsWith(pCode+'-') && !ep.startsWith(pCode+' ')) return false;
     const en1 = String(e.wbs||'').replace(/^-/,'').trim();
     const en2 = e.taskNum ? String(e.taskNum).trim() : '';
-    if (n2) return en1 === String(n1) && en2 === String(n2);
-    return en1 === String(n1);
+    if (en1 !== sn1) return false;
+    // Match exact N2
+    if (en2 === sn2) return true;
+    // Match N1-seul avec même tâche
+    if (!en2 && taskLabel && (e.task||'').toLowerCase() === taskLabel.toLowerCase()) return true;
+    return false;
   });
   const totalMs = entries.reduce((s,e) => s+(e.ms||0), 0);
   const cout = entries.reduce((s,e) => s+calcCoutEntry(e), 0);
@@ -6477,11 +6486,13 @@ function renderHeuresParWBS(pid, entries) {
     const pct = totalH ? Math.round(h/totalH*100) : 0;
     // Trouver le libellé WBS dans DB
     const {n1:_n1, n2:_n2} = data;
-    const wbsMatch = ws.find(w =>
-      (String(w.n1)===_n1 && String(w.n2)===_n2) ||
-      (String(w.n1)===_n1 && !_n2)
-    );
-    const libelle = wbsMatch ? wbsMatch.libelle : (p ? p.code+'-'+wbsCode : wbsCode);
+    const wbsMatch = _n2
+      ? ws.find(w => String(w.n1)===_n1 && String(w.n2)===_n2)
+      : ws.find(w => String(w.n1)===_n1 && !_n2);
+    // Fallback: use task name from first entry
+    const firstEntry = data.entries[0];
+    const fallbackLabel = firstEntry?.task || (p ? p.code+'-'+wbsCode : wbsCode);
+    const libelle = wbsMatch ? wbsMatch.libelle : fallbackLabel;
     html += `<tr onclick="showHeuresDetail('wbs','${wbsCode}',${JSON.stringify(data.entries).replace(/"/g,'&quot;')})" style="cursor:pointer">
       <td><span class="td-code" style="font-size:10px">${p?p.code+'-':''}${wbsCode}</span></td>
       <td style="font-size:12px;color:var(--txt2)">${libelle}</td>
