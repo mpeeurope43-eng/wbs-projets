@@ -5577,7 +5577,7 @@ async function syncToFirebase(collection) {
 async function loadFromFirebase() {
   if (!db) return false;
   try {
-    const collections = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','demandes','users'];
+    const collections = ['projets','wbs','facturations','depenses','avenants','depPlan','ganttTasks','jalons','actions','heuresEntries','demandes','users'];
     await Promise.all(collections.map(async col => {
       const snap = await db.collection(col).get();
       DB[col] = snap.docs.map(d => d.data());
