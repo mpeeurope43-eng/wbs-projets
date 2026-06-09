@@ -1070,6 +1070,10 @@ tr:hover td{background:var(--bg3)}
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Import ADV
           </button>
+          <button class="btn btn-ghost btn-sm" onclick="clearImportADV()" style="display:flex;align-items:center;gap:5px;color:var(--red);border-color:var(--red)" title="Supprimer toutes les dépenses issues de l'import ADV pour ce projet">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            Vider ADV
+          </button>
           <button class="btn btn-primary btn-sm" onclick="openModalDepense()">+ Dépense</button>
         </div>
       </div>
@@ -4053,6 +4057,42 @@ function confirmProjetImport(mode) {
 // IMPORT ADV
 // ════════════════════════════════════════════════════════════════
 let importData = [];
+
+function clearImportADV() {
+  const pid = activeProjetId;
+  const proj = pid ? DB.projets.find(p=>p.id===pid) : null;
+  const projLabel = proj ? proj.code : '?';
+
+  const choix = confirm(
+    'Supprimer les dépenses issues de l\'import ADV ?\n\n' +
+    'OK = seulement le projet actif (' + projLabel + ')\n' +
+    'Annuler = annuler\n\n' +
+    '(Pour tous les projets : appelez clearImportADVAll() dans la console)'
+  );
+  if (!choix) return;
+  if (!pid) { alert('Aucun projet sélectionné.'); return; }
+
+  const toDelete = DB.depenses.filter(d => d.projetId === pid && d.source === 'adv');
+  if (!toDelete.length) { alert('Aucune dépense ADV pour ce projet.'); return; }
+
+  if (!confirm('CONFIRMATION — Supprimer ' + toDelete.length + ' dépense(s) ADV du projet ' + projLabel + ' ?\n\nIrréversible.')) return;
+
+  DB.depenses = DB.depenses.filter(d => !(d.projetId === pid && d.source === 'adv'));
+  saveDB();
+  renderDepenses();
+  alert('\u2713 ' + toDelete.length + ' dépense(s) ADV supprimées. Vous pouvez réimporter.');
+}
+
+function clearImportADVAll() {
+  const toDelete = DB.depenses.filter(d => d.source === 'adv');
+  if (!toDelete.length) { alert('Aucune dépense ADV à supprimer.'); return; }
+  if (!confirm('SUPPRESSION GLOBALE — Supprimer ' + toDelete.length + ' dépense(s) ADV sur TOUS les projets ?\n\nIrréversible.')) return;
+  if (!confirm('DERNIÈRE CONFIRMATION — ' + toDelete.length + ' dépenses ADV sur tous les projets ?')) return;
+  DB.depenses = DB.depenses.filter(d => d.source !== 'adv');
+  saveDB();
+  renderDepenses();
+  alert('\u2713 ' + toDelete.length + ' dépenses supprimées.');
+}
 
 function openModalImport() {
   importData = [];
