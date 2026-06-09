@@ -3565,8 +3565,8 @@ function renderDepPlanning(p) {
 
   allBodyRows += `<tr style="background:var(--bg3)"><td colspan="${periodes.length+2}" style="padding:4px 12px;font-size:11px;font-weight:600;color:var(--txt);border-bottom:1px solid var(--border2)">TOTAL PROJET</td></tr>`;
   allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Prévi total','var(--amber)')}${rowTotal(totPrev,'var(--amber)')}${totRowPrev}</tr>`;
-  allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Réel total','var(--red)')}${rowTotal(totReal+coutH,'var(--red)')}${totRowReal}</tr>`;
   const coutH=calcCoutHeures(pid);
+  allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Réel total','var(--red)')}${rowTotal(totReal+coutH,'var(--red)')}${totRowReal}</tr>`;
   allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Reste budget','var(--green)')}${rowTotal(budget-totReal-coutH,'var(--green)')}${totRowRar}</tr>`;
 
   document.getElementById('dep-planning-head').innerHTML = h1 + h2;
@@ -4078,7 +4078,7 @@ function clearImportADV() {
   if (!confirm('CONFIRMATION — Supprimer ' + toDelete.length + ' dépense(s) ADV du projet ' + projLabel + ' ?\n\nIrréversible.')) return;
 
   DB.depenses = DB.depenses.filter(d => !(d.projetId === pid && d.source === 'adv'));
-  saveDB();
+  saveLocalDB();
   renderDepenses();
   alert('\u2713 ' + toDelete.length + ' dépense(s) ADV supprimées. Vous pouvez réimporter.');
 }
@@ -4089,7 +4089,7 @@ function clearImportADVAll() {
   if (!confirm('SUPPRESSION GLOBALE — Supprimer ' + toDelete.length + ' dépense(s) ADV sur TOUS les projets ?\n\nIrréversible.')) return;
   if (!confirm('DERNIÈRE CONFIRMATION — ' + toDelete.length + ' dépenses ADV sur tous les projets ?')) return;
   DB.depenses = DB.depenses.filter(d => d.source !== 'adv');
-  saveDB();
+  saveLocalDB();
   renderDepenses();
   alert('\u2713 ' + toDelete.length + ' dépenses supprimées.');
 }
