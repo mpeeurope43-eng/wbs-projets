@@ -2061,7 +2061,7 @@ function fmtDate(s) {
   try { const d = dateFromStr(s); return d ? d.toLocaleDateString('fr-FR') : s; } catch(e) { return s; }
 }
 const fmt = v => new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v||0);
-const fmtK = v => v >= 1000 ? (v/1000).toFixed(0)+'k€' : v+'€';
+const fmtK = v => { const r=Math.round(v); return Math.abs(r)>=1000?(r/1000).toFixed(0)+'k€':r+'€'; };
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 function notif(msg, color='var(--green)') {
   const el = document.getElementById('notif');
@@ -3561,8 +3561,9 @@ function renderDepPlanning(p) {
 
   allBodyRows += `<tr style="background:var(--bg3)"><td colspan="${periodes.length+2}" style="padding:4px 12px;font-size:11px;font-weight:600;color:var(--txt);border-bottom:1px solid var(--border2)">TOTAL PROJET</td></tr>`;
   allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Prévi total','var(--amber)')}${rowTotal(totPrev,'var(--amber)')}${totRowPrev}</tr>`;
-  allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Réel total','var(--red)')}${rowTotal(totReal,'var(--red)')}${totRowReal}</tr>`;
-  allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Reste budget','var(--green)')}${rowTotal(budget-totReal,'var(--green)')}${totRowRar}</tr>`;
+  allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Réel total','var(--red)')}${rowTotal(totReal+coutH,'var(--red)')}${totRowReal}</tr>`;
+  const coutH=calcCoutHeures(pid);
+  allBodyRows += `<tr style="background:var(--bg3)">${rowSticky('Reste budget','var(--green)')}${rowTotal(budget-totReal-coutH,'var(--green)')}${totRowRar}</tr>`;
 
   document.getElementById('dep-planning-head').innerHTML = h1 + h2;
   document.getElementById('dep-planning-body').innerHTML = allBodyRows;
@@ -4140,12 +4141,16 @@ function processADVFile(file) {
         const fournisseur = r[IDX.fournisseur] ? String(r[IDX.fournisseur]).trim() : '';
         const nCde        = r[IDX.nCde]        ? String(r[IDX.nCde]).trim()        : '';
 
-        // Montant : priorité FC Montant HT > FAC Montant HT > Montant HT commande
+        // Montant : FC Montant HT > FAC Montant HT > Montant HT commande
         const safeF = v => { const f = parseFloat(String(v||'').replace(/[^0-9.,\-]/g,'')); return isNaN(f)?0:f; };
         const fcMontant  = safeF(r[IDX.fcMontant]);
         const facMontant = safeF(r[IDX.facMontant]);
         const cdeHT      = safeF(r[IDX.montantHT]);
-        const montant    = fcMontant || facMontant || cdeHT;
+        // Si aucun montant du tout, ignorer la ligne
+        if (!fcMontant && !facMontant && !cdeHT) continue;
+        // Montant réel = facturé (FC ou FAC). Montant prévu = commande sans facture
+        const montantReel = fcMontant || facMontant;
+        const montant = montantReel || cdeHT;
         if (!montant) continue;
 
         // Numéro facture
@@ -4176,9 +4181,9 @@ function processADVFile(file) {
         if (sLow === 'payée' || sLow === 'payé' || sLow.includes('réglé')) statut = 'paye';
         else if (sLow === 'a payer' || sLow === 'à payer') statut = 'engage';
         else if (sLow.includes('litige')) statut = 'engage';
-        // Sans statut ou '/' : engage si montant FC/FAC, sinon prevu (commande passée non facturée)
+        // Sans statut ou '/' : engage si facturé, prevu si seulement commande
         else if (!statutRaw || statutRaw === '/') {
-          statut = (fcMontant > 0 || facMontant > 0) ? 'engage' : 'engage'; // commande = toujours engage
+          statut = (fcMontant > 0 || facMontant > 0) ? 'engage' : 'prevu';
         }
 
         // WBS
@@ -4190,20 +4195,40 @@ function processADVFile(file) {
         if (seen.has(importId)) continue;
         seen.add(importId);
 
-        const libelle = fournisseur || (wbsVal ? 'Budget '+wbsVal : nCde ? 'Cde '+nCde : 'Import ADV');
+        // Bloquer si WBS manquant
+        if (!wbsVal) {
+          importData.push({ codeProjet, wbs: null, fournisseur: fournisseur||nCde||'?', nCde, fcNum: numFac, date: dateStr, montant, statut, _errWbs: true });
+          continue;
+        }
+        const libelle = fournisseur || ('Budget '+wbsVal);
         importData.push({ codeProjet, wbs: wbsVal, fournisseur: libelle, nCde, fcNum: numFac, date: dateStr, montant, statut });
       }
 
-      if (!importData.length) { showImportError('Aucune ligne avec montant trouvée.'); return; }
+      const validData = importData.filter(d => !d._errWbs);
+      const errData   = importData.filter(d =>  d._errWbs);
+      if (!validData.length && !errData.length) { showImportError('Aucune ligne avec montant trouvée.'); return; }
 
       // Résumé
-      const nbProjets = new Set(importData.map(d => d.codeProjet)).size;
-      const total = importData.reduce((s, d) => s + d.montant, 0);
-      document.getElementById('import-summary').textContent =
-        `${importData.length} lignes — ${nbProjets} projets — Total : ${fmt(total)}`;
+      const nbProjets = new Set(validData.map(d => d.codeProjet)).size;
+      const total = validData.reduce((s, d) => s + d.montant, 0);
+      let summaryTxt = `${validData.length} lignes valides — ${nbProjets} projets — Total : ${fmt(total)}`;
+      if (errData.length) summaryTxt += ` · ⚠ ${errData.length} ligne(s) ignorée(s) : WBS manquant`;
+      document.getElementById('import-summary').textContent = summaryTxt;
 
       let html = '';
-      importData.slice(0, 25).forEach(d => {
+      // Lignes en erreur en haut, en rouge
+      errData.forEach(d => {
+        html += `<tr style="background:rgba(239,68,68,.08)">
+          <td><span class="td-code" style="font-size:10px">${d.codeProjet}</span></td>
+          <td style="font-size:11px;color:var(--red);font-weight:700">⚠ WBS manquant</td>
+          <td style="font-size:12px">${String(d.fournisseur).slice(0,22)}</td>
+          <td style="font-size:11px;color:var(--txt3)">${d.fcNum||d.nCde||'—'}</td>
+          <td style="font-size:11px;color:var(--txt3)">${d.date||'—'}</td>
+          <td class="td-mono" style="font-size:11px;color:var(--red)">${fmt(d.montant)}</td>
+          <td><span class="badge badge-red" style="font-size:10px">Ignorée</span></td>
+        </tr>`;
+      });
+      validData.slice(0, 25).forEach(d => {
         const sB = d.statut==='paye'?'badge-green':d.statut==='engage'?'badge-amber':'badge-blue';
         const sL = d.statut==='paye'?'Payée':d.statut==='engage'?'Engagée':'Prévue';
         html += `<tr>
@@ -4236,6 +4261,7 @@ function showImportError(msg) {
 }
 
 function confirmImport() {
+  importData = importData.filter(d => !d._errWbs); // ne confirmer que les lignes valides
   let added = 0, skipped = 0;
   const existing = new Set(DB.depenses.map(d => d.importId).filter(Boolean));
 
