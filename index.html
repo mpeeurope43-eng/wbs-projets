@@ -4093,7 +4093,7 @@ function processADVFile(file) {
 
       // Trouver la ligne d'en-tête (contient "Code projet")
       let headerIdx = -1;
-      for (let i = 0; i < Math.min(rows.length, 6); i++) {
+      for (let i = 0; i < Math.min(rows.length, 25); i++) {
         if (rows[i] && rows[i].some(c => c && String(c).includes('Code projet'))) {
           headerIdx = i; break;
         }
