@@ -1067,10 +1067,6 @@ tr:hover td{background:var(--bg3)}
             <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;background:rgba(248,113,113,0.4);border-radius:2px;display:inline-block"></span>Manuel</span>
             <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;background:rgba(167,139,250,0.4);border-radius:2px;display:inline-block"></span>Import ADV</span>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="manualBackupWBS()" style="display:flex;align-items:center;gap:5px" title="Télécharger un backup JSON">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Backup
-          </button>
           <button class="btn btn-ghost btn-sm" onclick="openModalImport()" style="display:flex;align-items:center;gap:5px">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Import ADV
@@ -4068,24 +4064,6 @@ function confirmProjetImport(mode) {
 // ════════════════════════════════════════════════════════════════
 let importData = [];
 
-function manualBackupWBS(){
-  try{
-    const today=new Date().toISOString().slice(0,10);
-    const now=new Date();
-    const hhmm=String(now.getHours()).padStart(2,'0')+'h'+String(now.getMinutes()).padStart(2,'0');
-    const backup={_version:1,_date:new Date().toISOString(),_app:'MPE WBS Projets - Backup manuel',
-      projets:DB.projets||[],wbs:DB.wbs||[],facturations:DB.facturations||[],
-      depenses:DB.depenses||[],avenants:DB.avenants||[],depPlan:DB.depPlan||[],
-      ganttTasks:DB.ganttTasks||[],jalons:DB.jalons||[],actions:DB.actions||[],
-      demandes:DB.demandes||[],users:DB.users||[]};
-    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='MPE-WBS-backup-'+today+'_'+hhmm+'.json';
-    a.click();
-    notif('Backup téléchargé ✓');
-  }catch(e){alert('Backup échoué: '+e.message);}
-}
 
 function clearImportADV() {
   const pid = activeProjetId;
