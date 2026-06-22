@@ -6418,7 +6418,17 @@ async function genDepensesPresta(silent) {
   // Supprimer les anciennes dépenses presta
   DB.depenses = DB.depenses.filter(d => d.source !== 'presta');
 
-  // Grouper par projet + WBS + mois
+  // Grouper par projet + WBS + semaine ISO
+  const getISOWeekKey = (dateStr) => {
+    const dp = dateStr.split('-').map(Number);
+    const d = new Date(Date.UTC(dp[0], dp[1]-1, dp[2]));
+    const j4 = new Date(Date.UTC(dp[0], 0, 4));
+    const start = new Date(j4.getTime()-((j4.getUTCDay()||7)-1)*86400000);
+    const wk = Math.round((d - start) / 604800000) + 1;
+    const yr = wk < 1 ? dp[0]-1 : (wk > 52 && dp[1]===12 ? dp[0]+1 : dp[0]);
+    return yr + '-W' + String(wk).padStart(2,'0');
+  };
+
   const groups = {};
   prestaEntries.forEach(e => {
     const proj = DB.projets.find(p => p.code === e.project);
@@ -6431,19 +6441,23 @@ async function genDepensesPresta(silent) {
     const n1 = String(e.wbs || '').replace(/^-/,'').split('-')[0].trim();
     const n2 = e.taskNum ? String(e.taskNum).trim() : '';
     const wbsKey = n2 ? n1+'-'+n2 : n1;
-    const month = (e.date || '').slice(0, 7);
-    const gkey = proj.id+'|'+wbsKey+'|'+month;
-    if (!groups[gkey]) groups[gkey] = { projetId: proj.id, wbsKey, month, cout: 0, ms: 0, users: new Set() };
+    const weekKey = getISOWeekKey(e.date || '');
+    const gkey = proj.id+'|'+wbsKey+'|'+weekKey;
+    if (!groups[gkey]) groups[gkey] = { projetId: proj.id, wbsKey, weekKey, cout: 0, ms: 0, users: new Set() };
     groups[gkey].cout += cout;
     groups[gkey].ms += e.ms || 0;
     groups[gkey].users.add(u.name);
   });
 
-  // Créer les nouvelles dépenses
+  // Créer les nouvelles dépenses par semaine
   const newDeps = Object.entries(groups).map(([gkey, g]) => {
     const parts = g.wbsKey.split('-');
     const wbsMatch = DB.wbs.find(w => w.projetId === g.projetId && String(w.n1) === parts[0] && (!parts[1] || String(w.n2) === parts[1]));
-    const date = g.month + '-28';
+    // Date = lundi de la semaine
+    const [yr, wk] = g.weekKey.split('-W').map(Number);
+    const j4 = new Date(Date.UTC(yr, 0, 4));
+    const monday = new Date(j4.getTime()-((j4.getUTCDay()||7)-1)*86400000+(wk-1)*7*86400000);
+    const date = monday.toISOString().slice(0,10);
     return {
       id: 'presta_' + gkey.replace(/[|]/g, '_'),
       projetId: g.projetId,
@@ -6453,7 +6467,7 @@ async function genDepensesPresta(silent) {
       statut: 'engage',
       source: 'presta',
       date,
-      semaineCle: null,
+      semaineCle: g.weekKey,
     };
   });
 
