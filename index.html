@@ -6397,6 +6397,62 @@ function setHeureView(v) {
   renderHeures();
 }
 
+async function genDepensesPresta(silent) {
+  const prestas = (DB.heuresUsers || []).filter(u => u.type === 'presta');
+  if (!prestas.length) return;
+  const prestaIds = new Set(prestas.map(u => u.id));
+  const prestaEntries = (DB.heuresEntries || []).filter(e =>
+    prestaIds.has(e.userId) || prestas.some(u => u.name === e.user)
+  );
+  if (!prestaEntries.length) return;
+
+  // Supprimer les anciennes dépenses presta
+  DB.depenses = DB.depenses.filter(d => d.source !== 'presta');
+
+  // Grouper par projet + WBS + mois
+  const groups = {};
+  prestaEntries.forEach(e => {
+    const proj = DB.projets.find(p => p.code === e.project);
+    if (!proj) return;
+    const u = prestas.find(u => u.id === e.userId || u.name === e.user);
+    if (!u) return;
+    const rate = u.rate || 0;
+    const h = (e.ms || 0) / 3600000;
+    const cout = h * rate;
+    const n1 = String(e.wbs || '').replace(/^-/,'').split('-')[0].trim();
+    const n2 = e.taskNum ? String(e.taskNum).trim() : '';
+    const wbsKey = n2 ? n1+'-'+n2 : n1;
+    const month = (e.date || '').slice(0, 7);
+    const gkey = proj.id+'|'+wbsKey+'|'+month;
+    if (!groups[gkey]) groups[gkey] = { projetId: proj.id, wbsKey, month, cout: 0, ms: 0, users: new Set() };
+    groups[gkey].cout += cout;
+    groups[gkey].ms += e.ms || 0;
+    groups[gkey].users.add(u.name);
+  });
+
+  // Créer les nouvelles dépenses
+  const newDeps = Object.entries(groups).map(([gkey, g]) => {
+    const parts = g.wbsKey.split('-');
+    const wbsMatch = DB.wbs.find(w => w.projetId === g.projetId && String(w.n1) === parts[0] && (!parts[1] || String(w.n2) === parts[1]));
+    const date = g.month + '-28';
+    return {
+      id: 'presta_' + gkey.replace(/[|]/g, '_'),
+      projetId: g.projetId,
+      wbsId: wbsMatch ? wbsMatch.id : null,
+      libelle: 'Prestataires — ' + [...g.users].join(', '),
+      montant: Math.round(g.cout),
+      statut: 'engage',
+      source: 'presta',
+      date,
+      semaineCle: null,
+    };
+  });
+
+  DB.depenses = [...DB.depenses, ...newDeps];
+  await syncToFirebase('depenses');
+  if (!silent) notif(newDeps.length + ' dépense(s) prestataires générées');
+}
+
 async function syncHeuresFirebase(silent) {
   const btn = document.getElementById('btn-sync-heures');
   if (btn && !silent) btn.textContent = '⏳ Sync...';
@@ -6425,6 +6481,9 @@ async function syncHeuresFirebase(silent) {
       DB.heuresEntries = data.entries  || [];
       DB.heuresUsers   = data.users    || [];
       if (!silent) notif(`✓ ${DB.heuresEntries.length} pointages chargés`);
+
+      // Générer les dépenses prestataires automatiquement
+      await genDepensesPresta(silent);
       // Rafraîchir les pages qui utilisent les heures
       // Rafraîchir les pages selon celle qui est active
       const activePage = document.querySelector('.page.active');
@@ -6494,14 +6553,26 @@ function calcCoutEntry(e) {
 
 function renderHeures() {
   const pid = activeProjetId;
-  const entries = pid ? getHeuresForProjet(pid) : (DB.heuresEntries || []);
+  const allEntries = pid ? getHeuresForProjet(pid) : (DB.heuresEntries || []);
 
-  // ── KPIs
+  // Séparer internes et prestataires
+  const prestaTypes = new Set(['presta']);
+  const prestaIds = new Set((DB.heuresUsers||[]).filter(u=>prestaTypes.has(u.type)).map(u=>u.id));
+  const isPresta = e => prestaIds.has(e.userId) || (DB.heuresUsers||[]).some(u=>u.name===e.user&&prestaTypes.has(u.type));
+  const entries      = allEntries.filter(e => !isPresta(e)); // internes
+  const prestaEntries = allEntries.filter(e => isPresta(e)); // prestas
+
+  // ── KPIs internes
   const totalMs   = entries.reduce((s,e) => s+(e.ms||0), 0);
   const totalH    = msToH(totalMs);
   const totalCout = entries.reduce((s,e) => s+calcCoutEntry(e), 0);
   const persons   = [...new Set(entries.map(e => e.user||e.userId))].length;
   const lastSync  = DB.heuresEntries && DB.heuresEntries.length ? 'Chargé' : 'Non chargé';
+
+  // KPIs prestas
+  const prestaMs   = prestaEntries.reduce((s,e) => s+(e.ms||0), 0);
+  const prestaH    = msToH(prestaMs);
+  const prestaCout = prestaEntries.reduce((s,e) => s+calcCoutEntry(e), 0);
 
   document.getElementById('heures-kpis').innerHTML = `
     <div class="kpi blue">
@@ -6525,7 +6596,7 @@ function renderHeures() {
     </div>
   `;
 
-  if (!entries.length) {
+  if (!allEntries.length) {
     document.getElementById('heures-content').innerHTML = `
       <div class="card" style="text-align:center;padding:40px;color:var(--txt3)">
         <div style="font-size:32px;margin-bottom:12px">⏱</div>
@@ -6537,12 +6608,12 @@ function renderHeures() {
     return;
   }
 
-  if (heureView === 'wbs')    renderHeuresParWBS(pid, entries);
-  else if (heureView === 'person') renderHeuresParPerson(pid, entries);
-  else if (heureView === 'week')   renderHeuresParSemaine(pid, entries);
+  if (heureView === 'wbs')         renderHeuresParWBS(pid, entries, prestaEntries);
+  else if (heureView === 'person') renderHeuresParPerson(pid, entries, prestaEntries);
+  else if (heureView === 'week')   renderHeuresParSemaine(pid, entries, prestaEntries);
 }
 
-function renderHeuresParWBS(pid, entries) {
+function renderHeuresParWBS(pid, entries, prestaEntries=[]) {
   const p = pid ? getProjet(pid) : null;
   const ws = pid ? getWBSProjet(pid) : [];
 
@@ -6610,11 +6681,41 @@ function renderHeuresParWBS(pid, entries) {
   });
 
   html += '</tbody></table></div>';
+
+  // Section prestataires
+  if (prestaEntries.length) {
+    const prestaMap = {};
+    prestaEntries.forEach(e => {
+      const u = (DB.heuresUsers||[]).find(u=>u.id===e.userId||u.name===e.user);
+      const name = u ? u.name : (e.user||'?');
+      if (!prestaMap[name]) prestaMap[name] = { ms:0, cout:0, count:0 };
+      prestaMap[name].ms    += e.ms||0;
+      prestaMap[name].cout  += calcCoutEntry(e);
+      prestaMap[name].count++;
+    });
+    const totalPrestaCout = Object.values(prestaMap).reduce((s,v)=>s+v.cout,0);
+    html += `<div class="card" style="margin-top:16px;border-color:var(--amber)">
+      <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:12px;display:flex;align-items:center;gap:6px">
+        🔧 PRESTATAIRES — ${hToStr(msToH(prestaEntries.reduce((s,e)=>s+(e.ms||0),0)))} · ${fmt(totalPrestaCout)}
+        <span style="font-size:10px;color:var(--txt3);font-weight:400">(dépenses engagées générées automatiquement)</span>
+      </div>
+      <table><thead><tr><th>Prestataire</th><th style="text-align:right">Heures</th><th style="text-align:right">Coût</th><th style="text-align:right">Saisies</th></tr></thead><tbody>`;
+    Object.entries(prestaMap).forEach(([name, d]) => {
+      html += `<tr>
+        <td style="font-size:12px">${name}</td>
+        <td style="text-align:right;font-weight:600;color:var(--amber)">${hToStr(msToH(d.ms))}</td>
+        <td style="text-align:right;font-size:12px;color:var(--green)">${fmt(d.cout)}</td>
+        <td style="text-align:right;font-size:11px;color:var(--txt3)">${d.count}</td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
   document.getElementById('heures-content').innerHTML = html;
   document.getElementById('heures-detail').innerHTML = '';
 }
 
-function renderHeuresParPerson(pid, entries) {
+function renderHeuresParPerson(pid, entries, prestaEntries=[]) {
   const personMap = {};
   entries.forEach(e => {
     const key = e.user || e.userId || '?';
@@ -6658,11 +6759,33 @@ function renderHeuresParPerson(pid, entries) {
   });
 
   html += '</tbody></table></div>';
+
+  // Section prestataires
+  if (prestaEntries.length) {
+    const prestaMap = {};
+    prestaEntries.forEach(e => {
+      const u = (DB.heuresUsers||[]).find(u=>u.id===e.userId||u.name===e.user);
+      const name = u ? u.name : (e.user||'?');
+      if (!prestaMap[name]) prestaMap[name] = { ms:0, cout:0, count:0 };
+      prestaMap[name].ms    += e.ms||0;
+      prestaMap[name].cout  += calcCoutEntry(e);
+      prestaMap[name].count++;
+    });
+    const totalPrestaCout = Object.values(prestaMap).reduce((s,v)=>s+v.cout,0);
+    html += `<div class="card" style="margin-top:16px;border-color:var(--amber)">
+      <div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:12px">🔧 PRESTATAIRES — ${hToStr(msToH(prestaEntries.reduce((s,e)=>s+(e.ms||0),0)))} · ${fmt(totalPrestaCout)}</div>
+      <table><thead><tr><th>Prestataire</th><th style="text-align:right">Heures</th><th style="text-align:right">Coût</th><th style="text-align:right">Saisies</th></tr></thead><tbody>`;
+    Object.entries(prestaMap).forEach(([name, d]) => {
+      html += `<tr><td>${name}</td><td style="text-align:right;font-weight:600;color:var(--amber)">${hToStr(msToH(d.ms))}</td><td style="text-align:right;color:var(--green)">${fmt(d.cout)}</td><td style="text-align:right;color:var(--txt3)">${d.count}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
   document.getElementById('heures-content').innerHTML = html;
   document.getElementById('heures-detail').innerHTML = '';
 }
 
-function renderHeuresParSemaine(pid, entries) {
+function renderHeuresParSemaine(pid, entries, prestaEntries=[]) {
   // Grouper par semaine
   const weekMap = {};
   entries.forEach(e => {
