@@ -3456,7 +3456,14 @@ function renderDepPlanning(p) {
         // Filtrer par WBS si disponible
         if (wbsN1N2 && e.wbs) {
           const eWbs = String(e.wbs).replace(/^-/,'');
-          if (eWbs !== wbsN1N2 && eWbs.split('-')[0] !== String(w.n1)) return false;
+          const eN1 = eWbs.split('-')[0];
+          const eN2 = eWbs.split('-')[1] || (e.taskNum ? String(e.taskNum).trim() : '');
+          const eKey = eN2 ? eN1+'-'+eN2 : eN1;
+          if (eN2) {
+            if (eKey !== wbsN1N2) return false;
+          } else {
+            if (eN1 !== String(w.n1)) return false;
+          }
         }
         // Filtrer par semaine depuis e.date
         if (!e.date) return false;
