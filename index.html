@@ -6455,7 +6455,7 @@ function getHeuresWBSPost(projetCode, n1, n2) {
   const entries = (DB.heuresEntries || []).filter(e => {
     const ep = (e.project||'').toUpperCase().trim();
     if (ep !== pCode && !ep.startsWith(pCode+'-') && !ep.startsWith(pCode+' ')) return false;
-    const en1 = String(e.wbs||'').replace(/^-/,'').trim();
+    const en1 = String(e.wbs||'').replace(/^-/,'').split('-')[0].trim();
     const en2 = e.taskNum ? String(e.taskNum).trim() : '';
     if (en1 !== sn1) return false;
     // Match exact N2
@@ -6553,7 +6553,7 @@ function renderHeuresParWBS(pid, entries) {
   ws.forEach(w => { if(w.libelle) taskNumMap[w.libelle.toLowerCase()] = {n1:String(w.n1), n2:String(w.n2)}; });
 
   entries.forEach(e => {
-    const n1 = String(e.wbs || '').replace(/^-/,'').trim();
+    const n1 = String(e.wbs || '').replace(/^-/,'').split('-')[0].trim();
     let n2 = e.taskNum ? String(e.taskNum).trim() : '';
     // Si pas de N2, essayer de le trouver via le nom de la tâche
     if (!n2 && e.task) {
@@ -6721,7 +6721,7 @@ function showHeuresDetail(type, key, entriesJson) {
 
   entries.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(e => {
     const h = msToH(e.ms||0);
-    const n1 = String(e.wbs||'').replace(/^-/,'').trim();
+    const n1 = String(e.wbs||'').replace(/^-/,'').split('-')[0].trim();
     const n2 = e.taskNum ? String(e.taskNum).trim() : '';
     const wbsFull = `${e.project||''}${n1?'-'+n1:''}${n2?'-'+n2:''}`;
     html += `<tr>
