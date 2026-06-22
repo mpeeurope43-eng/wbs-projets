@@ -2109,8 +2109,9 @@ function calcCoutHeures(pid) {
   if (!DB.heuresEntries || !DB.heuresUsers) return 0;
   const entries = getHeuresForProjet(pid);
   return Math.round(entries.reduce((s,e) => {
-    const h = (e.ms||0) / 3600000;
     const u = DB.heuresUsers.find(u => u.id===e.userId || u.name===e.user);
+    if (u && u.type === 'presta') return s; // prestas comptés en dépenses engagées
+    const h = (e.ms||0) / 3600000;
     const rate = u ? (u.rate||100) : 100;
     return s + h * rate;
   }, 0));
@@ -3472,8 +3473,9 @@ function renderDepPlanning(p) {
         }
         return true;
       }).reduce((s,e) => {
-        const h = (e.ms||0)/3600000;
         const u = (DB.heuresUsers||[]).find(u=>u.id===e.userId||u.name===e.user);
+        if (u && u.type === 'presta') return s; // prestas comptés en dépenses engagées
+        const h = (e.ms||0)/3600000;
         return s + h * (u?u.rate||100:100);
       }, 0);
     };
